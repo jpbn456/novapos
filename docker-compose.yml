@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: retailpos_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: retailpos
+      POSTGRES_PASSWORD: retailpos123
+      POSTGRES_DB: retailpos
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_retailpos:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U retailpos"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_retailpos:
+    driver: local
