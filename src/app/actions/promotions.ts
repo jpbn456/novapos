@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
+import { getActivePromotionsData } from "@/lib/promotion-data"
 
 const db = prisma as any
 
@@ -91,6 +92,10 @@ export async function getPromotions() {
       discountAmount: tier.discountAmount ? Number(tier.discountAmount) : null,
     })),
   }))
+}
+
+export async function getActivePromotions() {
+  return getActivePromotionsData()
 }
 
 export async function createPromotion(input: unknown) {

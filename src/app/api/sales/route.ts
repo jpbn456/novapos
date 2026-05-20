@@ -3,6 +3,8 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { resolveSessionUserId } from "@/lib/auth/session-user"
 import { applyInventoryMovement } from "@/lib/inventory"
+import { getActivePromotionsData } from "@/lib/promotion-data"
+import { calculatePromotionalPricing } from "@/lib/pricing"
 import { z } from "zod"
 
 const db = prisma as any
@@ -117,11 +119,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "La caja seleccionada está cerrada" }, { status: 400 })
     }
 
-    // Calculate totals
-    const subtotal = items.reduce(
-      (sum, item) => sum + item.unitPrice * item.quantity,
-      0
+    const products = await db.product.findMany({
+      where: {
+        id: { in: items.map((item) => item.productId) },
+      },
+      select: {
+        id: true,
+        price: true,
+      },
+    })
+
+    const productPriceMap = new Map(products.map((product: any) => [product.id, Number(product.price)]))
+    const activePromotions = await getActivePromotionsData()
+    const pricing = calculatePromotionalPricing(
+      items.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        unitPrice: productPriceMap.get(item.productId) ?? item.unitPrice,
+      })),
+      activePromotions
     )
+
+    // Calculate totals
+    const subtotal = pricing.subtotal
     const tax = 0
     const total = subtotal + tax
 
@@ -157,11 +177,11 @@ export async function POST(request: NextRequest) {
           paymentMethod,
           notes: notes || null,
           items: {
-            create: items.map((item) => ({
+            create: pricing.lines.map((item) => ({
               productId: item.productId,
               quantity: item.quantity,
-              unitPrice: item.unitPrice,
-              subtotal: item.unitPrice * item.quantity,
+              unitPrice: item.effectiveUnitPrice,
+              subtotal: item.discountedSubtotal,
             })),
           },
         },
@@ -202,6 +222,8 @@ export async function POST(request: NextRequest) {
         subtotal: Number(sale.subtotal),
         tax: Number(sale.tax),
         total: Number(sale.total),
+        savings: pricing.savings,
+        appliedPromotions: pricing.appliedPromotions,
         items: sale.items.map((item: any) => ({
           ...item,
           unitPrice: Number(item.unitPrice),
