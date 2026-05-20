@@ -59,7 +59,7 @@ export interface PurchaseOrderItem {
   id: string
   purchaseOrderId: string
   productId: string
-  product?: { id: string; name: string; sku: string | null }
+  product?: { id: string; name: string; productNumber: number }
   quantity: number
   receivedQty: number
   unitCost: number

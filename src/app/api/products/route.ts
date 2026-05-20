@@ -5,6 +5,7 @@ import { z } from "zod"
 
 const productSchema = z.object({
   name: z.string().min(1).max(200),
+  // Compatibilidad temporal: todavía aceptamos sku aunque la UI principal ya usa ID incremental.
   sku: z.string().max(50).optional(),
   description: z.string().optional(),
   price: z.number().positive(),
@@ -38,10 +39,12 @@ export async function GET(request: NextRequest) {
     }
 
     if (search) {
+      const numericSearch = Number(search)
       where.OR = [
         { name: { contains: search, mode: "insensitive" } },
         { sku: { contains: search, mode: "insensitive" } },
         { barcode: { contains: search, mode: "insensitive" } },
+        ...(Number.isInteger(numericSearch) ? [{ productNumber: numericSearch }] : []),
       ]
     }
 
@@ -98,14 +101,14 @@ export async function POST(request: NextRequest) {
 
     const slug = slugify(result.data.name)
 
-    // Check for duplicate SKU
+    // Compatibilidad temporal: seguimos validando sku interno si llega en el payload.
     if (result.data.sku) {
       const existingSku = await prisma.product.findUnique({
         where: { sku: result.data.sku },
       })
       if (existingSku) {
         return NextResponse.json(
-          { error: "Ya existe un producto con ese SKU" },
+          { error: "Ya existe un producto con ese código interno" },
           { status: 400 }
         )
       }

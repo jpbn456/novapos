@@ -61,7 +61,6 @@ interface Product {
   productNumber: number
   name: string
   slug: string
-  sku: string | null
   description: string | null
   price: number
   cost: number | null

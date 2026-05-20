@@ -129,7 +129,7 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    const productPriceMap = new Map(products.map((product: any) => [product.id, Number(product.price)]))
+    const productPriceMap = new Map<string, number>(products.map((product: any) => [product.id, Number(product.price)]))
     const activePromotions = await getActivePromotionsData()
     const pricing = calculatePromotionalPricing(
       items.map((item) => ({

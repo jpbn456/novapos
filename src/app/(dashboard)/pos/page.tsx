@@ -52,7 +52,6 @@ interface Product {
   productNumber: number
   name: string
   price: number
-  sku: string | null
   barcode: string | null
 }
 
@@ -222,7 +221,6 @@ function POSContent() {
         (product) =>
           product.name.toLowerCase().includes(search.toLowerCase()) ||
           String(product.productNumber).includes(search) ||
-          (product.sku && product.sku.toLowerCase().includes(search.toLowerCase())) ||
           (product.barcode && product.barcode.includes(search))
       ),
     [products, search]

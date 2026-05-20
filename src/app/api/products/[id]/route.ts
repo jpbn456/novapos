@@ -5,6 +5,7 @@ import { z } from "zod"
 
 const productSchema = z.object({
   name: z.string().min(1).max(200),
+  // Compatibilidad temporal: todavía aceptamos sku aunque la UI principal ya usa ID incremental.
   sku: z.string().max(50).optional(),
   description: z.string().optional(),
   price: z.number().positive(),
@@ -77,14 +78,14 @@ export async function PUT(
 
     const slug = slugify(result.data.name)
 
-    // Check for duplicate SKU (excluding current product)
+    // Compatibilidad temporal: seguimos validando sku interno si llega en el payload.
     if (result.data.sku) {
       const existingSku = await prisma.product.findFirst({
         where: { sku: result.data.sku, id: { not: id } },
       })
       if (existingSku) {
         return NextResponse.json(
-          { error: "Ya existe un producto con ese SKU" },
+          { error: "Ya existe un producto con ese código interno" },
           { status: 400 }
         )
       }

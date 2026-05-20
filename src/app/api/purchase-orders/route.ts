@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
         items: {
           include: {
             product: {
-              select: { id: true, name: true, sku: true },
+              select: { id: true, name: true, productNumber: true },
             },
           },
         },
@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
         items: {
           include: {
             product: {
-              select: { id: true, name: true, sku: true },
+              select: { id: true, name: true, productNumber: true },
             },
           },
         },

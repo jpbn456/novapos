@@ -36,7 +36,7 @@ export async function GET(
         items: {
           include: {
             product: {
-              select: { id: true, name: true, sku: true, price: true },
+              select: { id: true, name: true, productNumber: true, price: true },
             },
           },
         },
@@ -159,7 +159,7 @@ export async function PUT(
         items: {
           include: {
             product: {
-              select: { id: true, name: true, sku: true },
+              select: { id: true, name: true, productNumber: true },
             },
           },
         },

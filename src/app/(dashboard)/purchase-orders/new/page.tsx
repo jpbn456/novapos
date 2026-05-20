@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 
 interface Supplier { id: string; name: string }
 interface Location { id: string; name: string }
-interface Product { id: string; name: string; productNumber: number; sku: string | null }
+interface Product { id: string; name: string; productNumber: number }
 interface OrderItem {
   productId: string
   productName: string
