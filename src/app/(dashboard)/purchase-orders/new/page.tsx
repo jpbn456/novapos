@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 
 interface Supplier { id: string; name: string }
 interface Location { id: string; name: string }
-interface Product { id: string; name: string; sku: string | null }
+interface Product { id: string; name: string; productNumber: number; sku: string | null }
 interface OrderItem {
   productId: string
   productName: string
@@ -164,7 +164,7 @@ export default function NewPurchaseOrderPage() {
                   onChange={(e) => setSelectedProduct(e.target.value)}
                 >
                   <option value="">Seleccionar producto</option>
-                  {products.map((p) => <option key={p.id} value={p.id}>{p.name} {p.sku && `(${p.sku})`}</option>)}
+                  {products.map((p) => <option key={p.id} value={p.id}>{p.name} (ID {p.productNumber})</option>)}
                 </select>
               </div>
               <div className="w-24 space-y-2">

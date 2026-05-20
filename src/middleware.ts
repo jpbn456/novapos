@@ -13,6 +13,9 @@ export default auth((req) => {
     req.nextUrl.pathname.startsWith("/suppliers") ||
     req.nextUrl.pathname.startsWith("/purchase-orders") ||
     req.nextUrl.pathname.startsWith("/reports") ||
+    req.nextUrl.pathname.startsWith("/promotions") ||
+    req.nextUrl.pathname.startsWith("/cash-movements") ||
+    req.nextUrl.pathname.startsWith("/inventory-movements") ||
     req.nextUrl.pathname.startsWith("/users") ||
     req.nextUrl.pathname.startsWith("/settings");
 
@@ -37,6 +40,9 @@ export const config = {
     "/suppliers/:path*",
     "/purchase-orders/:path*",
     "/reports/:path*",
+    "/promotions/:path*",
+    "/cash-movements/:path*",
+    "/inventory-movements/:path*",
     "/users/:path*",
     "/settings/:path*",
     "/login",

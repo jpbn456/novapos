@@ -2,6 +2,7 @@
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
+import { getPgPoolConfig } from "@/lib/prisma-config";
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
@@ -10,24 +11,7 @@ const globalForPrisma = globalThis as unknown as {
 
 function createPrismaClient() {
   if (!globalForPrisma.pool) {
-    // Parse connection string to avoid @ password issues
-    const dbUrl = process.env.DATABASE_URL;
-    if (dbUrl) {
-      const match = dbUrl.match(/postgresql:\/\/([^:]+):(.+)@(.+):(\d+)\/(.+)/);
-      if (match) {
-        globalForPrisma.pool = new pg.Pool({
-          user: match[1],
-          password: match[2],
-          host: match[3],
-          port: parseInt(match[4]),
-          database: match[5],
-        });
-      } else {
-        globalForPrisma.pool = new pg.Pool({ connectionString: dbUrl });
-      }
-    } else {
-      throw new Error("DATABASE_URL not defined");
-    }
+    globalForPrisma.pool = new pg.Pool(getPgPoolConfig());
   }
 
   const adapter = new PrismaPg(globalForPrisma.pool);

@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useSearchParams } from "next/navigation"
 import { cn } from "@/lib/utils"
 import {
   LayoutDashboard,
@@ -16,6 +16,7 @@ import {
   Truck,
   FileText,
   Users,
+  ChevronRight,
 } from "lucide-react"
 import { logoutAction } from "@/app/actions/auth"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -29,15 +30,50 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet"
 
-const navigation = [
-  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { name: "Punto de Venta", href: "/pos", icon: ShoppingCart },
-  { name: "Productos", href: "/products", icon: Package },
-  { name: "Sucursales", href: "/locations", icon: Store },
-  { name: "Categorías", href: "/categories", icon: Tags },
+type NavItem = {
+  name: string
+  href?: string
+  icon: typeof LayoutDashboard
+  tab?: string
+  children?: Array<{ name: string; href: string; tab?: string }>
+}
+
+const navigation: NavItem[] = [
+  {
+    name: "Caja",
+    href: "/dashboard",
+    icon: LayoutDashboard,
+    children: [
+      { name: "Resumen", href: "/dashboard" },
+      { name: "Nueva venta", href: "/pos" },
+      { name: "Movimientos de caja", href: "/cash-movements" },
+    ],
+  },
+  {
+    name: "Reportes",
+    href: "/reports?tab=sales",
+    icon: BarChart3,
+    children: [
+      { name: "Ventas", href: "/reports?tab=sales", tab: "sales" },
+      { name: "Stock", href: "/reports?tab=inventory", tab: "inventory" },
+      { name: "Compras", href: "/reports?tab=purchases", tab: "purchases" },
+      { name: "Gráficos", href: "/reports?tab=charts", tab: "charts" },
+    ],
+  },
+  {
+    name: "Depósito",
+    href: "/products",
+    icon: Package,
+    children: [
+      { name: "Categorías", href: "/categories" },
+      { name: "Productos", href: "/products" },
+      { name: "Promociones", href: "/promotions" },
+      { name: "Entradas / salidas", href: "/inventory-movements" },
+    ],
+  },
   { name: "Proveedores", href: "/suppliers", icon: Truck },
-  { name: "Órdenes de Compra", href: "/purchase-orders", icon: FileText },
-  { name: "Reportes", href: "/reports", icon: BarChart3 },
+  { name: "Órdenes de compra", href: "/purchase-orders", icon: FileText },
+  { name: "Sucursales", href: "/locations", icon: Store },
 ]
 
 interface SidebarProps {
@@ -47,32 +83,79 @@ interface SidebarProps {
 
 export function Sidebar({ userRole = "ADMIN", userName = "Usuario" }: SidebarProps) {
   const pathname = usePathname()
+  const searchParams = useSearchParams()
   const [mobileOpen, setMobileOpen] = useState(false)
 
   const handleLogout = async () => {
     await logoutAction()
   }
 
+  function isItemActive(href?: string, tab?: string) {
+    if (!href) return false
+
+    const url = new URL(href, "http://localhost")
+    const hrefPath = url.pathname
+    const hrefTab = tab ?? url.searchParams.get("tab")
+
+    if (pathname !== hrefPath && !pathname.startsWith(hrefPath + "/")) {
+      return false
+    }
+
+    if (hrefPath === "/reports" && hrefTab) {
+      return searchParams.get("tab") === hrefTab
+    }
+
+    return true
+  }
+
   const navigationContent = (
     <>
       <nav className="flex-1 space-y-1 px-3 py-4">
         {navigation.map((item) => {
-          const isActive = pathname === item.href || pathname.startsWith(item.href + "/")
+          const isActive = isItemActive(item.href) || item.children?.some((child) => isItemActive(child.href, child.tab))
           return (
-            <Link
-              key={item.name}
-              href={item.href}
-              onClick={() => setMobileOpen(false)}
-              className={cn(
-                "flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors",
-                isActive
-                  ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-xs"
-                  : "text-sidebar-foreground/72 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-              )}
-            >
-              <item.icon className="h-5 w-5" />
-              <span className="truncate">{item.name}</span>
-            </Link>
+            <div key={item.name} className="space-y-1 rounded-2xl">
+              <Link
+                href={item.href || "#"}
+                onClick={() => setMobileOpen(false)}
+                className={cn(
+                  "flex items-center justify-between gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors",
+                  isActive
+                    ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-xs"
+                    : "text-sidebar-foreground/72 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                )}
+              >
+                <span className="flex items-center gap-3 min-w-0">
+                  <item.icon className="h-5 w-5" />
+                  <span className="truncate">{item.name}</span>
+                </span>
+                {item.children?.length ? <ChevronRight className="h-4 w-4 opacity-70" /> : null}
+              </Link>
+
+              {item.children?.length ? (
+                <div className="ml-4 border-l border-sidebar-border/80 pl-3">
+                  {item.children.map((child) => {
+                    const childActive = isItemActive(child.href, child.tab)
+                    return (
+                      <Link
+                        key={child.href}
+                        href={child.href}
+                        onClick={() => setMobileOpen(false)}
+                        className={cn(
+                          "flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors",
+                          childActive
+                            ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                            : "text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                        )}
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />
+                        <span>{child.name}</span>
+                      </Link>
+                    )
+                  })}
+                </div>
+              ) : null}
+            </div>
           )
         })}
         {userRole === "ADMIN" && (

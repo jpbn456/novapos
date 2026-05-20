@@ -72,6 +72,10 @@ model User {
   sales            Sale[]
   transfers        Transfer[]
   purchaseOrders   PurchaseOrder[]
+  openedCashSessions CashSession[]       @relation("OpenedCashSessions")
+  closedCashSessions CashSession[]       @relation("ClosedCashSessions")
+  cashMovements      CashMovement[]
+  inventoryMovements InventoryMovement[]
 }
 
 enum UserRole {
@@ -98,6 +102,9 @@ model Location {
   transfersFrom    Transfer[]        @relation("FromLocation")
   transfersTo      Transfer[]        @relation("ToLocation")
   purchaseOrders   PurchaseOrder[]
+  cashSessions     CashSession[]
+  cashMovements    CashMovement[]
+  inventoryMovements InventoryMovement[]
 }
 
 // ============================================
@@ -119,6 +126,7 @@ model Category {
 
 model Product {
   id                String   @id @default(cuid())
+  productNumber     Int      @unique @default(autoincrement())
   name              String
   slug              String   @unique
   sku               String?  @unique
@@ -129,6 +137,8 @@ model Product {
   image             String?
   isActive          Boolean  @default(true)
   lowStockThreshold Int      @default(10)
+  unitOfMeasure     UnitOfMeasure @default(UNIT)
+  customUnitName    String?
   categoryId        String?
   supplierId        String?
   createdAt         DateTime @default(now())
@@ -137,9 +147,22 @@ model Product {
   category        Category?           @relation(fields: [categoryId], references: [id])
   supplier        Supplier?           @relation(fields: [supplierId], references: [id])
   inventory       Inventory[]
+  inventoryMovements InventoryMovement[]
   saleItems       SaleItem[]
   transferItems   TransferItem[]
   orderItems      PurchaseOrderItem[]
+  promotionProducts PromotionProduct[]
+  promotionComboItems PromotionComboItem[]
+  promotionTiers PromotionTier[]
+}
+
+enum UnitOfMeasure {
+  UNIT
+  ML
+  G
+  KG
+  LT
+  OTHER
 }
 
 model Inventory {
@@ -166,6 +189,7 @@ model Sale {
   invoiceNumber String        @unique @default(cuid())
   userId        String
   locationId    String
+  cashSessionId String?
   subtotal      Decimal       @db.Decimal(10, 2)
   tax           Decimal       @db.Decimal(10, 2) @default(0)
   total         Decimal       @db.Decimal(10, 2)
@@ -176,7 +200,9 @@ model Sale {
 
   user     User      @relation(fields: [userId], references: [id])
   location Location  @relation(fields: [locationId], references: [id])
+  cashSession CashSession? @relation(fields: [cashSessionId], references: [id])
   items    SaleItem[]
+  inventoryMovements InventoryMovement[]
 }
 
 model SaleItem {
@@ -209,6 +235,88 @@ enum SaleStatus {
 }
 
 // ============================================
+// Caja / Turnos / Arqueos
+// ============================================
+
+model CashSession {
+  id                    String            @id @default(cuid())
+  locationId            String
+  openedByUserId        String
+  closedByUserId        String?
+  registerLabel         String
+  shiftLabel            ShiftLabel
+  status                CashSessionStatus @default(OPEN)
+  businessDate          DateTime
+  openingCashAmount     Decimal           @db.Decimal(10, 2)
+  countedCashAmount     Decimal?          @db.Decimal(10, 2)
+  expectedCashAmount    Decimal?          @db.Decimal(10, 2)
+  differenceAmount      Decimal?          @db.Decimal(10, 2)
+  openingNotes          String?           @db.Text
+  closingNotes          String?           @db.Text
+  openedAt              DateTime          @default(now())
+  closedAt              DateTime?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  location       Location        @relation(fields: [locationId], references: [id])
+  openedBy       User            @relation("OpenedCashSessions", fields: [openedByUserId], references: [id])
+  closedBy       User?           @relation("ClosedCashSessions", fields: [closedByUserId], references: [id])
+  sales          Sale[]
+  movements      CashMovement[]
+
+  @@index([locationId, status])
+  @@index([businessDate])
+}
+
+model CashMovement {
+  id              String               @id @default(cuid())
+  cashSessionId   String
+  locationId      String
+  userId          String
+  type            CashMovementType
+  category        CashMovementCategory
+  paymentMethod   PaymentMethod
+  amount          Decimal              @db.Decimal(10, 2)
+  description     String               @db.Text
+  createdAt       DateTime             @default(now())
+  purchaseOrderId String?
+
+  cashSession   CashSession   @relation(fields: [cashSessionId], references: [id], onDelete: Cascade)
+  location      Location      @relation(fields: [locationId], references: [id])
+  user          User          @relation(fields: [userId], references: [id])
+  purchaseOrder PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
+
+  @@index([cashSessionId, createdAt])
+  @@index([locationId])
+}
+
+enum CashSessionStatus {
+  OPEN
+  CLOSED
+}
+
+enum ShiftLabel {
+  MANANA
+  TARDE
+  OTRO
+}
+
+enum CashMovementType {
+  INCOME
+  EXPENSE
+}
+
+enum CashMovementCategory {
+  APERTURA
+  INGRESO_MANUAL
+  EGRESO_MANUAL
+  RETIRO
+  GASTO
+  PAGO_PROVEEDOR
+  AJUSTE
+}
+
+// ============================================
 // Transfers Between Locations
 // ============================================
 
@@ -227,6 +335,7 @@ model Transfer {
   toLocation   Location        @relation("ToLocation", fields: [toLocationId], references: [id])
   user         User            @relation(fields: [userId], references: [id])
   items        TransferItem[]
+  inventoryMovements InventoryMovement[]
 }
 
 model TransferItem {
@@ -293,6 +402,8 @@ model PurchaseOrder {
   location   Location           @relation(fields: [locationId], references: [id])
   user       User               @relation(fields: [userId], references: [id])
   items      PurchaseOrderItem[]
+  cashMovements CashMovement[]
+  inventoryMovements InventoryMovement[]
 }
 
 model PurchaseOrderItem {
@@ -309,6 +420,114 @@ model PurchaseOrderItem {
 
   @@index([purchaseOrderId])
   @@index([productId])
+}
+
+// ============================================
+// Inventory Ledger
+// ============================================
+
+model InventoryMovement {
+  id              String                @id @default(cuid())
+  productId       String
+  locationId      String
+  userId          String?
+  saleId          String?
+  purchaseOrderId String?
+  transferId      String?
+  type            InventoryMovementType
+  quantityDelta   Int
+  quantityBefore  Int
+  quantityAfter   Int
+  notes           String?               @db.Text
+  createdAt       DateTime              @default(now())
+
+  product       Product        @relation(fields: [productId], references: [id])
+  location      Location       @relation(fields: [locationId], references: [id])
+  user          User?          @relation(fields: [userId], references: [id])
+  sale          Sale?          @relation(fields: [saleId], references: [id])
+  purchaseOrder PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
+  transfer      Transfer?      @relation(fields: [transferId], references: [id])
+
+  @@index([productId, locationId, createdAt])
+  @@index([saleId])
+  @@index([purchaseOrderId])
+  @@index([transferId])
+}
+
+enum InventoryMovementType {
+  INITIAL
+  SALE
+  PURCHASE_RECEIPT
+  TRANSFER_OUT
+  TRANSFER_IN
+  ADJUSTMENT
+  MANUAL_IN
+  MANUAL_OUT
+}
+
+// ============================================
+// Promotions
+// ============================================
+
+model Promotion {
+  id             String         @id @default(cuid())
+  name           String
+  description    String?        @db.Text
+  type           PromotionType
+  comboPrice     Decimal?       @db.Decimal(10, 2)
+  discountPercent Decimal?      @db.Decimal(5, 2)
+  discountAmount Decimal?       @db.Decimal(10, 2)
+  isActive       Boolean        @default(true)
+  startsAt       DateTime?
+  endsAt         DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  products       PromotionProduct[]
+  comboItems     PromotionComboItem[]
+  tiers          PromotionTier[]
+}
+
+model PromotionProduct {
+  id           String    @id @default(cuid())
+  promotionId  String
+  productId    String
+
+  promotion Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+  product   Product   @relation(fields: [productId], references: [id])
+
+  @@unique([promotionId, productId])
+}
+
+model PromotionComboItem {
+  id           String @id @default(cuid())
+  promotionId  String
+  productId    String
+  quantity     Int    @default(1)
+
+  promotion Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+  product   Product   @relation(fields: [productId], references: [id])
+
+  @@unique([promotionId, productId])
+}
+
+model PromotionTier {
+  id                String   @id @default(cuid())
+  promotionId       String
+  productId         String?
+  minimumQuantity   Int
+  discountPercent   Decimal? @db.Decimal(5, 2)
+  discountAmount    Decimal? @db.Decimal(10, 2)
+
+  promotion Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+  product   Product?  @relation(fields: [productId], references: [id])
+
+  @@index([promotionId, minimumQuantity])
+}
+
+enum PromotionType {
+  COMBO
+  SCALE
 }
 
 enum PurchaseOrderStatus {

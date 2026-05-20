@@ -2,6 +2,17 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { format } from "date-fns";
 
+function parseDateBoundary(value: string | null, endOfDay = false) {
+  if (!value) return null;
+
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return null;
+
+  return endOfDay
+    ? new Date(year, month - 1, day, 23, 59, 59, 999)
+    : new Date(year, month - 1, day, 0, 0, 0, 0);
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -10,22 +21,24 @@ export async function GET(request: Request) {
     const endDate = searchParams.get("endDate");
     const locationId = searchParams.get("locationId");
     const productId = searchParams.get("productId");
+    const parsedStartDate = parseDateBoundary(startDate);
+    const parsedEndDate = parseDateBoundary(endDate, true);
 
     // Build where clause
     const where: any = {};
     
-    if (startDate && endDate) {
+    if (parsedStartDate && parsedEndDate) {
       where.createdAt = {
-        gte: new Date(startDate),
-        lte: new Date(endDate),
+        gte: parsedStartDate,
+        lte: parsedEndDate,
       };
-    } else if (startDate) {
+    } else if (parsedStartDate) {
       where.createdAt = {
-        gte: new Date(startDate),
+        gte: parsedStartDate,
       };
-    } else if (endDate) {
+    } else if (parsedEndDate) {
       where.createdAt = {
-        lte: new Date(endDate),
+        lte: parsedEndDate,
       };
     }
     
@@ -96,15 +109,24 @@ export async function GET(request: Request) {
       }
     }
 
-    // Calculate summary
+    // Calculate summary (per unique sale, not per item row)
+    const uniqueSales = new Map<string, { total: number; tax: number }>()
+    for (const row of reportRows) {
+      if (!uniqueSales.has(row.invoiceNumber)) {
+        uniqueSales.set(row.invoiceNumber, { total: row.total, tax: row.tax })
+      }
+    }
+    const saleTotals = Array.from(uniqueSales.values())
+    const totalSales = saleTotals.reduce((sum, s) => sum + s.total, 0)
+    const totalTax = saleTotals.reduce((sum, s) => sum + s.tax, 0)
+    const salesCount = uniqueSales.size
+
     const summary = {
-      totalSales: reportRows.reduce((sum, row) => sum + row.total, 0),
+      totalSales,
       totalItems: reportRows.reduce((sum, row) => sum + row.quantity, 0),
-      totalTax: reportRows.reduce((sum, row) => sum + row.tax, 0),
-      averageTicket: reportRows.length > 0 
-        ? reportRows.reduce((sum, row) => sum + row.total, 0) / new Set(reportRows.map(r => r.invoiceNumber)).size 
-        : 0,
-      salesCount: new Set(reportRows.map(r => r.invoiceNumber)).size,
+      totalTax,
+      averageTicket: salesCount > 0 ? totalSales / salesCount : 0,
+      salesCount,
     };
 
     return NextResponse.json({ data: reportRows, summary });

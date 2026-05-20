@@ -5,6 +5,11 @@ import { prisma } from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { ActionResult, ProductData } from "@/types/auth"
+import { auth } from "@/auth"
+import { resolveSessionUserId } from "@/lib/auth/session-user"
+import { applyInventoryMovement } from "@/lib/inventory"
+
+const db = prisma as any
 
 type ProductWithCategory = Prisma.ProductGetPayload<{
   include: {
@@ -14,15 +19,27 @@ type ProductWithCategory = Prisma.ProductGetPayload<{
 
 const productSchema = z.object({
   name: z.string().min(1, "Nombre requerido").max(200),
-  sku: z.string().max(50).optional(),
   description: z.string().optional(),
   price: z.coerce.number().positive("Precio debe ser positivo"),
   cost: z.coerce.number().optional(),
   barcode: z.string().max(50).optional(),
   image: z.string().url().optional(),
   lowStockThreshold: z.coerce.number().int().min(0).default(10),
+  unitOfMeasure: z.enum(["UNIT", "ML", "G", "KG", "LT", "OTHER"]).default("UNIT"),
+  customUnitName: z.string().max(40).optional(),
+  initialStock: z.coerce.number().int().min(0).default(0),
+  initialLocationId: z.string().optional(),
   categoryId: z.string().optional(),
 })
+
+function serializeProduct(p: any): ProductData {
+  return {
+    ...p,
+    price: Number(p.price),
+    cost: p.cost ? Number(p.cost) : null,
+    customUnitName: p.customUnitName || null,
+  }
+}
 
 function slugify(text: string): string {
   return text
@@ -45,10 +62,12 @@ export async function getProducts(
     }
 
     if (search) {
+      const numericSearch = Number(search)
       where.OR = [
         { name: { contains: search, mode: "insensitive" } },
         { sku: { contains: search, mode: "insensitive" } },
         { barcode: { contains: search, mode: "insensitive" } },
+        ...(Number.isInteger(numericSearch) ? [{ productNumber: numericSearch }] : []),
       ]
     }
 
@@ -57,7 +76,7 @@ export async function getProducts(
     }
 
     const [products, total] = await Promise.all([
-      prisma.product.findMany({
+      db.product.findMany({
         where,
         skip: (page - 1) * limit,
         take: limit,
@@ -66,16 +85,14 @@ export async function getProducts(
           category: true,
         },
       }),
-      prisma.product.count({ where }),
+      db.product.count({ where }),
     ])
 
     return {
       success: true,
       data: {
         products: products.map((p: ProductWithCategory) => ({
-          ...p,
-          price: Number(p.price),
-          cost: p.cost ? Number(p.cost) : null,
+          ...serializeProduct(p),
         })),
         total,
       },
@@ -88,7 +105,7 @@ export async function getProducts(
 
 export async function getProduct(id: string): Promise<ActionResult<ProductData>> {
   try {
-    const product = await prisma.product.findUnique({
+    const product = await db.product.findUnique({
       where: { id },
       include: {
         category: true,
@@ -102,9 +119,7 @@ export async function getProduct(id: string): Promise<ActionResult<ProductData>>
     return {
       success: true,
       data: {
-        ...product,
-        price: Number(product.price),
-        cost: product.cost ? Number(product.cost) : null,
+        ...serializeProduct(product),
       },
     }
   } catch (error) {
@@ -116,13 +131,16 @@ export async function getProduct(id: string): Promise<ActionResult<ProductData>>
 export async function createProduct(formData: FormData): Promise<ActionResult<ProductData>> {
   const rawData = {
     name: formData.get("name") as string,
-    sku: formData.get("sku") as string || undefined,
     description: formData.get("description") as string || undefined,
     price: formData.get("price") as string,
     cost: formData.get("cost") as string || undefined,
     barcode: formData.get("barcode") as string || undefined,
     image: formData.get("image") as string || undefined,
     lowStockThreshold: formData.get("lowStockThreshold") as string || "10",
+    unitOfMeasure: formData.get("unitOfMeasure") as string || "UNIT",
+    customUnitName: formData.get("customUnitName") as string || undefined,
+    initialStock: formData.get("initialStock") as string || "0",
+    initialLocationId: formData.get("initialLocationId") as string || undefined,
     categoryId: formData.get("categoryId") as string || undefined,
   }
 
@@ -138,19 +156,17 @@ export async function createProduct(formData: FormData): Promise<ActionResult<Pr
 
   const slug = slugify(result.data.name)
 
-  // Check for duplicate SKU
-  if (result.data.sku) {
-    const existingSku = await prisma.product.findUnique({
-      where: { sku: result.data.sku },
-    })
-    if (existingSku) {
-      return { success: false, error: "Ya existe un producto con ese SKU" }
-    }
+  if (result.data.unitOfMeasure === "OTHER" && !result.data.customUnitName) {
+    return { success: false, error: "Indicá la unidad personalizada" }
+  }
+
+  if (result.data.initialStock > 0 && !result.data.initialLocationId) {
+    return { success: false, error: "Seleccioná una sucursal para el stock inicial" }
   }
 
   // Check for duplicate barcode
   if (result.data.barcode) {
-    const existingBarcode = await prisma.product.findUnique({
+    const existingBarcode = await db.product.findUnique({
       where: { barcode: result.data.barcode },
     })
     if (existingBarcode) {
@@ -159,24 +175,49 @@ export async function createProduct(formData: FormData): Promise<ActionResult<Pr
   }
 
   try {
-    const product = await prisma.product.create({
-      data: {
-        ...result.data,
-        slug,
-        cost: result.data.cost || null,
-      },
-      include: {
-        category: true,
-      },
+    const session = await auth()
+    const userId = session?.user ? await resolveSessionUserId(session) : null
+
+    const product = await prisma.$transaction(async (tx) => {
+      const txDb = tx as any
+      const created = await txDb.product.create({
+        data: {
+          name: result.data.name,
+          slug,
+          description: result.data.description || null,
+          price: result.data.price,
+          cost: result.data.cost || null,
+          barcode: result.data.barcode || null,
+          image: result.data.image || null,
+          lowStockThreshold: result.data.lowStockThreshold,
+          unitOfMeasure: result.data.unitOfMeasure,
+          customUnitName: result.data.unitOfMeasure === "OTHER" ? result.data.customUnitName || null : null,
+          categoryId: result.data.categoryId || null,
+        },
+        include: {
+          category: true,
+        },
+      })
+
+      if (result.data.initialStock > 0 && result.data.initialLocationId) {
+        await applyInventoryMovement(txDb, {
+          productId: created.id,
+          locationId: result.data.initialLocationId,
+          quantityDelta: result.data.initialStock,
+          type: "INITIAL",
+          userId,
+          notes: "Stock inicial del producto",
+        })
+      }
+
+      return created
     })
 
     revalidatePath("/products")
     return {
       success: true,
       data: {
-        ...product,
-        price: Number(product.price),
-        cost: product.cost ? Number(product.cost) : null,
+        ...serializeProduct(product),
       },
     }
   } catch (error) {
@@ -191,13 +232,16 @@ export async function updateProduct(
 ): Promise<ActionResult<ProductData>> {
   const rawData = {
     name: formData.get("name") as string,
-    sku: formData.get("sku") as string || undefined,
     description: formData.get("description") as string || undefined,
     price: formData.get("price") as string,
     cost: formData.get("cost") as string || undefined,
     barcode: formData.get("barcode") as string || undefined,
     image: formData.get("image") as string || undefined,
     lowStockThreshold: formData.get("lowStockThreshold") as string || "10",
+    unitOfMeasure: formData.get("unitOfMeasure") as string || "UNIT",
+    customUnitName: formData.get("customUnitName") as string || undefined,
+    initialStock: "0",
+    initialLocationId: undefined,
     categoryId: formData.get("categoryId") as string || undefined,
   }
 
@@ -213,19 +257,13 @@ export async function updateProduct(
 
   const slug = slugify(result.data.name)
 
-  // Check for duplicate SKU (excluding current product)
-  if (result.data.sku) {
-    const existingSku = await prisma.product.findFirst({
-      where: { sku: result.data.sku, id: { not: id } },
-    })
-    if (existingSku) {
-      return { success: false, error: "Ya existe un producto con ese SKU" }
-    }
+  if (result.data.unitOfMeasure === "OTHER" && !result.data.customUnitName) {
+    return { success: false, error: "Indicá la unidad personalizada" }
   }
 
   // Check for duplicate barcode (excluding current product)
   if (result.data.barcode) {
-    const existingBarcode = await prisma.product.findFirst({
+    const existingBarcode = await db.product.findFirst({
       where: { barcode: result.data.barcode, id: { not: id } },
     })
     if (existingBarcode) {
@@ -234,12 +272,19 @@ export async function updateProduct(
   }
 
   try {
-    const product = await prisma.product.update({
+    const product = await db.product.update({
       where: { id },
-      data: {
-        ...result.data,
+        data: {
+        name: result.data.name,
         slug,
+        description: result.data.description || null,
+        price: result.data.price,
         cost: result.data.cost || null,
+        barcode: result.data.barcode || null,
+        image: result.data.image || null,
+        lowStockThreshold: result.data.lowStockThreshold,
+        unitOfMeasure: result.data.unitOfMeasure,
+        customUnitName: result.data.unitOfMeasure === "OTHER" ? result.data.customUnitName || null : null,
         categoryId: result.data.categoryId || null,
       },
       include: {
@@ -251,9 +296,7 @@ export async function updateProduct(
     return {
       success: true,
       data: {
-        ...product,
-        price: Number(product.price),
-        cost: product.cost ? Number(product.cost) : null,
+        ...serializeProduct(product),
       },
     }
   } catch (error) {
@@ -265,7 +308,7 @@ export async function updateProduct(
 export async function deleteProduct(id: string): Promise<ActionResult<void>> {
   try {
     // Soft delete
-    await prisma.product.update({
+    await db.product.update({
       where: { id },
       data: { isActive: false },
     })

@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
+import { resolveSessionUserId } from "@/lib/auth/session-user"
+import { applyInventoryMovement } from "@/lib/inventory"
 import { z } from "zod"
+
+const db = prisma as any
 
 const saleItemSchema = z.object({
   productId: z.string(),
@@ -11,6 +15,7 @@ const saleItemSchema = z.object({
 
 const saleSchema = z.object({
   locationId: z.string(),
+  cashSessionId: z.string().min(1),
   paymentMethod: z.enum(["CASH", "CARD", "TRANSFER", "OTHER"]),
   items: z.array(saleItemSchema).min(1),
   notes: z.string().optional(),
@@ -60,7 +65,7 @@ export async function GET(request: NextRequest) {
         subtotal: Number(sale.subtotal),
         tax: Number(sale.tax),
         total: Number(sale.total),
-        items: sale.items.map((item) => ({
+        items: sale.items.map((item: any) => ({
           ...item,
           unitPrice: Number(item.unitPrice),
           subtotal: Number(item.subtotal),
@@ -77,8 +82,14 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const session = await auth()
-    if (!session?.user?.id) {
+    if (!session?.user) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 })
+    }
+
+    const userId = await resolveSessionUserId(session)
+
+    if (!userId) {
+      return NextResponse.json({ error: "Sesión inválida. Volvé a iniciar sesión." }, { status: 401 })
     }
 
     const body = await request.json()
@@ -91,8 +102,20 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { locationId, paymentMethod, items, notes } = result.data
-    const userId = session.user.id
+    const { locationId, cashSessionId, paymentMethod, items, notes } = result.data
+
+    const cashSession = await db.cashSession.findUnique({
+      where: { id: cashSessionId },
+      select: { id: true, locationId: true, status: true },
+    })
+
+    if (!cashSession || cashSession.locationId !== locationId) {
+      return NextResponse.json({ error: "La caja seleccionada no corresponde a la sucursal" }, { status: 400 })
+    }
+
+    if (cashSession.status !== "OPEN") {
+      return NextResponse.json({ error: "La caja seleccionada está cerrada" }, { status: 400 })
+    }
 
     // Calculate totals
     const subtotal = items.reduce(
@@ -104,9 +127,11 @@ export async function POST(request: NextRequest) {
 
     // Use Prisma transaction for atomicity
     const sale = await prisma.$transaction(async (tx) => {
+      const txDb = tx as any
+
       // Validate stock for all items
       for (const item of items) {
-        const inventory = await tx.inventory.findUnique({
+        const inventory = await txDb.inventory.findUnique({
           where: {
             productId_locationId: {
               productId: item.productId,
@@ -118,28 +143,14 @@ export async function POST(request: NextRequest) {
         if (!inventory || inventory.quantity < item.quantity) {
           throw new Error("Stock insuficiente para el producto")
         }
-
-        // Deduct inventory
-        await tx.inventory.update({
-          where: {
-            productId_locationId: {
-              productId: item.productId,
-              locationId,
-            },
-          },
-          data: {
-            quantity: {
-              decrement: item.quantity,
-            },
-          },
-        })
       }
 
       // Create sale
-      const createdSale = await tx.sale.create({
+      const createdSale = await txDb.sale.create({
         data: {
           userId,
           locationId,
+          cashSessionId,
           subtotal,
           tax,
           total,
@@ -170,6 +181,18 @@ export async function POST(request: NextRequest) {
         },
       })
 
+      for (const item of items) {
+        await applyInventoryMovement(txDb, {
+          productId: item.productId,
+          locationId,
+          quantityDelta: -item.quantity,
+          type: "SALE",
+          userId,
+          saleId: createdSale.id,
+          notes: "Salida por venta",
+        })
+      }
+
       return createdSale
     })
 
@@ -179,10 +202,15 @@ export async function POST(request: NextRequest) {
         subtotal: Number(sale.subtotal),
         tax: Number(sale.tax),
         total: Number(sale.total),
-        items: sale.items.map((item) => ({
+        items: sale.items.map((item: any) => ({
           ...item,
           unitPrice: Number(item.unitPrice),
           subtotal: Number(item.subtotal),
+          product: {
+            ...item.product,
+            price: Number(item.product.price),
+            cost: item.product.cost ? Number(item.product.cost) : null,
+          },
         })),
       },
       { status: 201 }

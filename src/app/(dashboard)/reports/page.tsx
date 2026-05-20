@@ -3,13 +3,13 @@
 import { useCallback, useEffect, useState } from "react"
 import { endOfMonth, format, startOfMonth, subDays } from "date-fns"
 import { CalendarRange, Loader2 } from "lucide-react"
+import { useRouter, useSearchParams } from "next/navigation"
 
 import { PageHeader } from "@/components/dashboard/page-primitives"
 import InventoryReport from "@/components/reports/inventory-report"
 import PurchaseReport from "@/components/reports/purchase-report"
 import SalesCharts from "@/components/reports/sales-charts"
 import SalesReport from "@/components/reports/sales-report"
-import TransferReport from "@/components/reports/transfer-report"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -42,7 +42,6 @@ interface SalesReportSummary {
 const tabs = [
   { id: "sales", label: "Ventas" },
   { id: "inventory", label: "Inventario" },
-  { id: "transfers", label: "Transferencias" },
   { id: "purchases", label: "Compras" },
   { id: "charts", label: "Gráficos" },
 ] as const
@@ -55,6 +54,8 @@ const datePresets = [
 ]
 
 export default function ReportsPage() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]["id"]>("sales")
   const [dateRange, setDateRange] = useState({
     startDate: format(subDays(new Date(), 30), "yyyy-MM-dd"),
@@ -84,6 +85,22 @@ export default function ReportsPage() {
   useEffect(() => {
     fetchSalesData()
   }, [fetchSalesData])
+
+  useEffect(() => {
+    const requestedTab = searchParams.get("tab") as (typeof tabs)[number]["id"] | null
+    if (requestedTab && tabs.some((tab) => tab.id === requestedTab)) {
+      setActiveTab(requestedTab)
+      return
+    }
+    setActiveTab("sales")
+  }, [searchParams])
+
+  function handleTabChange(tabId: (typeof tabs)[number]["id"]) {
+    setActiveTab(tabId)
+    const params = new URLSearchParams(searchParams.toString())
+    params.set("tab", tabId)
+    router.replace(`/reports?${params.toString()}`)
+  }
 
   return (
     <div className="space-y-6">
@@ -151,7 +168,7 @@ export default function ReportsPage() {
                   variant={activeTab === tab.id ? "default" : "outline"}
                   size="sm"
                   className="min-h-10"
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => handleTabChange(tab.id)}
                 >
                   {tab.label}
                 </Button>
@@ -167,7 +184,6 @@ export default function ReportsPage() {
 
           {!loading && activeTab === "sales" ? <SalesReport data={salesData} summary={salesSummary} /> : null}
           {activeTab === "inventory" ? <InventoryReport dateRange={dateRange} /> : null}
-          {activeTab === "transfers" ? <TransferReport dateRange={dateRange} /> : null}
           {activeTab === "purchases" ? <PurchaseReport dateRange={dateRange} /> : null}
           {activeTab === "charts" ? <SalesCharts dateRange={dateRange} /> : null}
         </CardContent>

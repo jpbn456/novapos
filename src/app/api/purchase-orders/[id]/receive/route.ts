@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { applyInventoryMovement } from '@/lib/inventory'
 
 export async function POST(
   request: NextRequest,
@@ -45,8 +46,10 @@ export async function POST(
 
     // Use transaction to update inventory atomically
     const result = await prisma.$transaction(async (tx) => {
+      const txDb = tx as any
+
       // Update order status to RECEIVED
-      const updatedOrder = await tx.purchaseOrder.update({
+      const updatedOrder = await txDb.purchaseOrder.update({
         where: { id },
         data: {
           status: 'RECEIVED',
@@ -67,34 +70,14 @@ export async function POST(
 
       // Update inventory for each item
       for (const item of order.items) {
-        // Try to update existing inventory
-        const existingInventory = await tx.inventory.findUnique({
-          where: {
-            productId_locationId: {
-              productId: item.productId,
-              locationId: order.locationId,
-            },
-          },
+        await applyInventoryMovement(txDb, {
+          productId: item.productId,
+          locationId: order.locationId,
+          quantityDelta: item.quantity,
+          type: 'PURCHASE_RECEIPT',
+          purchaseOrderId: order.id,
+          notes: `Ingreso por orden ${order.orderNumber}`,
         })
-
-        if (existingInventory) {
-          // Update existing inventory
-          await tx.inventory.update({
-            where: { id: existingInventory.id },
-            data: {
-              quantity: existingInventory.quantity + item.quantity,
-            },
-          })
-        } else {
-          // Create new inventory record
-          await tx.inventory.create({
-            data: {
-              productId: item.productId,
-              locationId: order.locationId,
-              quantity: item.quantity,
-            },
-          })
-        }
       }
 
       return updatedOrder

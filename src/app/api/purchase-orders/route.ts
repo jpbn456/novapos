@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
+import { resolveSessionUserId } from '@/lib/auth/session-user'
 import { z } from 'zod'
 
 const createOrderSchema = z.object({
@@ -68,6 +70,16 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await auth()
+    if (!session?.user) {
+      return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
+    }
+
+    const userId = await resolveSessionUserId(session)
+    if (!userId) {
+      return NextResponse.json({ error: 'Sesión inválida. Volvé a iniciar sesión.' }, { status: 401 })
+    }
+
     const body = await request.json()
     const validatedData = createOrderSchema.parse(body)
 
@@ -87,7 +99,7 @@ export async function POST(request: NextRequest) {
         orderNumber,
         supplierId: validatedData.supplierId,
         locationId: validatedData.locationId,
-        userId: 'system', // TODO: Get from session
+        userId,
         expectedDate: validatedData.expectedDate
           ? new Date(validatedData.expectedDate)
           : null,

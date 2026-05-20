@@ -56,7 +56,7 @@ export default function InventoryReport({ dateRange }: InventoryReportProps) {
     <div className="space-y-6">
       {summary ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <StatCard label="SKUs" value={summary.totalProducts} helper="Productos relevados" icon={Package} iconClassName="text-primary" />
+          <StatCard label="IDs" value={summary.totalProducts} helper="Productos relevados" icon={Package} iconClassName="text-primary" />
           <StatCard label="Sucursales" value={summary.totalLocations} helper="Con inventario auditado" icon={Store} iconClassName="text-success-foreground" />
           <StatCard label="Valor de stock" value={formatCurrency(summary.totalStockValue)} helper="Valor comercial estimado" icon={Boxes} iconClassName="text-secondary-foreground" />
           <StatCard label="Stock bajo" value={summary.lowStockCount} helper="Requiere reposición" icon={AlertTriangle} iconClassName="text-warning" />
@@ -67,7 +67,7 @@ export default function InventoryReport({ dateRange }: InventoryReportProps) {
         <Table className="min-w-[820px]">
           <TableHeader>
             <TableRow>
-              <TableHead className="hidden sm:table-cell">SKU</TableHead>
+              <TableHead className="hidden sm:table-cell">ID</TableHead>
               <TableHead>Producto</TableHead>
               <TableHead className="hidden md:table-cell">Categoría</TableHead>
               <TableHead className="hidden lg:table-cell">Sucursal</TableHead>
@@ -85,7 +85,7 @@ export default function InventoryReport({ dateRange }: InventoryReportProps) {
             ) : (
               data.map((row) => (
                 <TableRow key={row.id} className={row.isLowStock ? "bg-warning/10" : undefined}>
-                  <TableCell className="hidden font-mono text-xs sm:table-cell">{row.sku}</TableCell>
+                  <TableCell className="hidden font-mono text-xs sm:table-cell">{row.productNumber}</TableCell>
                   <TableCell className="whitespace-normal">{row.product}</TableCell>
                   <TableCell className="hidden md:table-cell">{row.category}</TableCell>
                   <TableCell className="hidden lg:table-cell">{row.location}</TableCell>

@@ -1,7 +1,12 @@
 import { PrismaClient, UserRole, PaymentMethod } from '@prisma/client'
+import { PrismaPg } from '@prisma/adapter-pg'
+import pg from 'pg'
 import bcrypt from 'bcryptjs'
+import { getPgPoolConfig } from '../src/lib/prisma-config'
 
-const prisma = new PrismaClient()
+const prisma = new PrismaClient({
+  adapter: new PrismaPg(new pg.Pool(getPgPoolConfig(true))),
+})
 
 async function main() {
   console.log('🌱 Seeding database...')

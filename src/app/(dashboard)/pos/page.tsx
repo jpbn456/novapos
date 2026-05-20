@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import {
   Banknote,
   CreditCard,
@@ -19,6 +19,7 @@ import {
 import { getLocations } from "@/app/actions/locations"
 import { getProducts } from "@/app/actions/products"
 import { createSale } from "@/app/actions/sales"
+import { getCashSessions } from "@/app/actions/cash"
 import { useCart, CartProvider } from "@/contexts/cart-context"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -46,10 +47,19 @@ interface Location {
 
 interface Product {
   id: string
+  productNumber: number
   name: string
   price: number
   sku: string | null
   barcode: string | null
+}
+
+interface CashSessionOption {
+  id: string
+  locationId: string
+  registerLabel: string
+  shiftLabel: "MANANA" | "TARDE" | "OTRO"
+  status: "OPEN" | "CLOSED"
 }
 
 function formatCurrency(value: number) {
@@ -63,13 +73,16 @@ function formatCurrency(value: number) {
 
 function POSContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { items, addItem, removeItem, updateQuantity, clearCart, getTotal, getItemCount } = useCart()
 
   const [locations, setLocations] = useState<Location[]>([])
+  const [cashSessions, setCashSessions] = useState<CashSessionOption[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
   const [locationId, setLocationId] = useState("")
+  const [cashSessionId, setCashSessionId] = useState("")
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "CARD" | "TRANSFER" | "OTHER">("CASH")
   const [submitting, setSubmitting] = useState(false)
   const [saleComplete, setSaleComplete] = useState<any>(null)
@@ -85,7 +98,10 @@ function POSContent() {
     if (locationsResult.success && locationsResult.data) {
       const activeLocations = (locationsResult.data as any[]).filter((location) => location.isActive)
       setLocations(activeLocations)
-      if (activeLocations.length > 0 && !locationId) {
+      const requestedLocationId = searchParams.get("locationId")
+      if (requestedLocationId && activeLocations.some((location) => location.id === requestedLocationId)) {
+        setLocationId(requestedLocationId)
+      } else if (activeLocations.length > 0 && !locationId) {
         setLocationId(activeLocations[0].id)
       }
     }
@@ -96,6 +112,38 @@ function POSContent() {
 
     setLoading(false)
   }
+
+  useEffect(() => {
+    if (!locationId) {
+      setCashSessions([])
+      setCashSessionId("")
+      return
+    }
+
+    getCashSessions(locationId, "OPEN").then((sessions) => {
+      const normalized = (sessions as any[]).map((session) => ({
+        id: session.id,
+        locationId: session.locationId,
+        registerLabel: session.registerLabel,
+        shiftLabel: session.shiftLabel,
+        status: session.status,
+      })) as CashSessionOption[]
+
+      setCashSessions(normalized)
+
+      const requestedCashSessionId = searchParams.get("cashSessionId")
+      if (requestedCashSessionId && normalized.some((session) => session.id === requestedCashSessionId)) {
+        setCashSessionId(requestedCashSessionId)
+        return
+      }
+
+      setCashSessionId((current) => (
+        normalized.some((session) => session.id === current)
+          ? current
+          : (normalized[0]?.id || "")
+      ))
+    })
+  }, [locationId, searchParams])
 
   function handleCheckout() {
     if (!locationId) {
@@ -108,10 +156,16 @@ function POSContent() {
       return
     }
 
+    if (!cashSessionId) {
+      alert("Seleccioná una caja abierta")
+      return
+    }
+
     setSubmitting(true)
 
     createSale({
       locationId,
+      cashSessionId,
       paymentMethod,
       items: items.map((item) => ({
         productId: item.productId,
@@ -135,6 +189,7 @@ function POSContent() {
       products.filter(
         (product) =>
           product.name.toLowerCase().includes(search.toLowerCase()) ||
+          String(product.productNumber).includes(search) ||
           (product.sku && product.sku.toLowerCase().includes(search.toLowerCase())) ||
           (product.barcode && product.barcode.includes(search))
       ),
@@ -142,6 +197,7 @@ function POSContent() {
   )
 
   const currentLocation = locations.find((location) => location.id === locationId)
+  const currentCashSession = cashSessions.find((session) => session.id === cashSessionId)
 
   if (saleComplete) {
     return (
@@ -218,7 +274,7 @@ function POSContent() {
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
-                    placeholder="Buscar por nombre, SKU o código de barras..."
+                    placeholder="Buscar por nombre, ID o código de barras..."
                     className="h-11 pl-10"
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
@@ -237,12 +293,30 @@ function POSContent() {
                     ))}
                   </SelectContent>
                 </Select>
+                <Select value={cashSessionId} onValueChange={(value) => setCashSessionId(value || "") }>
+                  <SelectTrigger className="h-11 w-full lg:w-72">
+                    <Banknote className="mr-2 h-4 w-4" />
+                    <SelectValue placeholder="Caja abierta" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {cashSessions.map((session) => (
+                      <SelectItem key={session.id} value={session.id}>
+                        {session.registerLabel} · {session.shiftLabel.toLowerCase()}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <QrCode className="h-4 w-4" />
-                Podés buscar por texto o pegar el código de barras manualmente.
+                Podés buscar por texto, ID o pegar el código de barras manualmente.
               </div>
+              {!cashSessions.length ? (
+                <div className="rounded-xl border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning-foreground">
+                  No hay cajas abiertas para esta sucursal. Abrí una desde Caja antes de cobrar.
+                </div>
+              ) : null}
             </CardContent>
           </Card>
 
@@ -263,7 +337,7 @@ function POSContent() {
                 <div className="flex min-h-80 flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-muted/20 text-center">
                   <Search className="mb-3 h-10 w-10 text-muted-foreground" />
                   <p className="font-medium text-foreground">No se encontraron productos.</p>
-                  <p className="text-sm text-muted-foreground">Probá con otro nombre, SKU o código.</p>
+                  <p className="text-sm text-muted-foreground">Probá con otro nombre, ID o código.</p>
                 </div>
               ) : (
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
@@ -275,7 +349,7 @@ function POSContent() {
                       className="group flex min-h-36 flex-col rounded-2xl border border-border/70 bg-muted/10 p-4 text-left transition-colors hover:bg-secondary/22 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
-                        <Badge variant="secondary" className="min-h-8 px-2.5">{product.sku || "Sin SKU"}</Badge>
+                        <Badge variant="secondary" className="min-h-8 px-2.5">ID {product.productNumber}</Badge>
                         {product.barcode ? <span className="max-w-full truncate text-xs text-muted-foreground">{product.barcode}</span> : null}
                       </div>
                       <p className="line-clamp-2 font-medium text-foreground">{product.name}</p>
@@ -294,7 +368,10 @@ function POSContent() {
               <ShoppingCart className="h-5 w-5" />
               Carrito
             </CardTitle>
-            <CardDescription>{getItemCount()} productos agregados para el cobro actual.</CardDescription>
+            <CardDescription>
+              {getItemCount()} productos agregados para el cobro actual.
+              {currentCashSession ? ` · ${currentCashSession.registerLabel}` : ""}
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="max-h-[420px] overflow-y-auto pr-1">
@@ -442,7 +519,7 @@ function POSContent() {
                 <Button variant="outline" className="min-h-11" onClick={clearCart} disabled={items.length === 0}>
                   Limpiar
                 </Button>
-                <Button className="min-h-11" onClick={handleCheckout} disabled={submitting || !locationId || items.length === 0}>
+                <Button className="min-h-11" onClick={handleCheckout} disabled={submitting || !locationId || !cashSessionId || items.length === 0}>
                   {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Cobrar"}
                 </Button>
               </div>

@@ -56,6 +56,7 @@ export interface CategoryData {
 // Product type for API responses
 export interface ProductData {
   id: string
+  productNumber: number
   name: string
   slug: string
   sku: string | null
@@ -66,6 +67,8 @@ export interface ProductData {
   image: string | null
   isActive: boolean
   lowStockThreshold: number
+  unitOfMeasure: 'UNIT' | 'ML' | 'G' | 'KG' | 'LT' | 'OTHER'
+  customUnitName: string | null
   categoryId: string | null
   category?: CategoryData | null
   createdAt: Date

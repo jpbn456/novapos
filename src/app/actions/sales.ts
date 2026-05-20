@@ -5,6 +5,10 @@ import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { ActionResult } from "@/types/auth"
 import { auth } from "@/auth"
+import { resolveSessionUserId } from "@/lib/auth/session-user"
+import { applyInventoryMovement } from "@/lib/inventory"
+
+const db = prisma as any
 
 const saleItemSchema = z.object({
   productId: z.string(),
@@ -14,6 +18,7 @@ const saleItemSchema = z.object({
 
 const saleSchema = z.object({
   locationId: z.string(),
+  cashSessionId: z.string().min(1, "Caja requerida"),
   paymentMethod: z.enum(["CASH", "CARD", "TRANSFER", "OTHER"]),
   items: z.array(saleItemSchema).min(1, "Al menos un producto"),
   notes: z.string().optional(),
@@ -21,6 +26,7 @@ const saleSchema = z.object({
 
 export async function createSale(data: {
   locationId: string
+  cashSessionId: string
   paymentMethod: "CASH" | "CARD" | "TRANSFER" | "OTHER"
   items: Array<{
     productId: string
@@ -30,8 +36,14 @@ export async function createSale(data: {
   notes?: string
 }): Promise<ActionResult<any>> {
   const session = await auth()
-  if (!session?.user?.id) {
+  if (!session?.user) {
     return { success: false, error: "No autenticado" }
+  }
+
+  const userId = await resolveSessionUserId(session)
+
+  if (!userId) {
+    return { success: false, error: "Sesión inválida. Volvé a iniciar sesión." }
   }
 
   const result = saleSchema.safeParse(data)
@@ -44,10 +56,21 @@ export async function createSale(data: {
     }
   }
 
-  const { locationId, paymentMethod, items, notes } = result.data
-  const userId = session.user.id
-
+  const { locationId, cashSessionId, paymentMethod, items, notes } = result.data
   try {
+    const cashSession = await db.cashSession.findUnique({
+      where: { id: cashSessionId },
+      select: { id: true, locationId: true, status: true },
+    })
+
+    if (!cashSession || cashSession.locationId !== locationId) {
+      return { success: false, error: "La caja seleccionada no corresponde a la sucursal" }
+    }
+
+    if (cashSession.status !== "OPEN") {
+      return { success: false, error: "La caja seleccionada está cerrada" }
+    }
+
     // Calculate totals
     const subtotal = items.reduce(
       (sum, item) => sum + item.unitPrice * item.quantity,
@@ -58,9 +81,11 @@ export async function createSale(data: {
 
     // Use Prisma transaction for atomicity
     const sale = await prisma.$transaction(async (tx) => {
+      const txDb = tx as any
+
       // Validate stock for all items
       for (const item of items) {
-        const inventory = await tx.inventory.findUnique({
+        const inventory = await txDb.inventory.findUnique({
           where: {
             productId_locationId: {
               productId: item.productId,
@@ -74,28 +99,14 @@ export async function createSale(data: {
             `Stock insuficiente para el producto`
           )
         }
-
-        // Deduct inventory
-        await tx.inventory.update({
-          where: {
-            productId_locationId: {
-              productId: item.productId,
-              locationId,
-            },
-          },
-          data: {
-            quantity: {
-              decrement: item.quantity,
-            },
-          },
-        })
       }
 
       // Create sale
-      const createdSale = await tx.sale.create({
+      const createdSale = await txDb.sale.create({
         data: {
           userId,
           locationId,
+          cashSessionId,
           subtotal,
           tax,
           total,
@@ -126,6 +137,18 @@ export async function createSale(data: {
         },
       })
 
+      for (const item of items) {
+        await applyInventoryMovement(txDb, {
+          productId: item.productId,
+          locationId,
+          quantityDelta: -item.quantity,
+          type: "SALE",
+          userId,
+          saleId: createdSale.id,
+          notes: "Salida por venta",
+        })
+      }
+
       return createdSale
     })
 
@@ -139,10 +162,15 @@ export async function createSale(data: {
         subtotal: Number(sale.subtotal),
         tax: Number(sale.tax),
         total: Number(sale.total),
-        items: sale.items.map((item) => ({
+        items: sale.items.map((item: any) => ({
           ...item,
           unitPrice: Number(item.unitPrice),
           subtotal: Number(item.subtotal),
+          product: {
+            ...item.product,
+            price: Number(item.product.price),
+            cost: item.product.cost ? Number(item.product.cost) : null,
+          },
         })),
       },
     }

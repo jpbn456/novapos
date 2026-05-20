@@ -1,23 +1,76 @@
+"use client"
+
 import Link from "next/link"
+import { useEffect, useMemo, useState } from "react"
+import {
+  AlertTriangle,
+  Banknote,
+  CreditCard,
+  Loader2,
+  Plus,
+  Receipt,
+  Store,
+  Wallet,
+} from "lucide-react"
 
 import { getDashboardMetrics } from "@/app/actions/dashboard"
+import { createCashMovement, getCashSessions, openCashSession, closeCashSession } from "@/app/actions/cash"
+import { getLocations } from "@/app/actions/locations"
 import { PageHeader, StatCard } from "@/components/dashboard/page-primitives"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
-  AlertTriangle,
-  ArrowRight,
-  DollarSign,
-  Package,
-  ShoppingCart,
-  Store,
-  Truck,
-} from "lucide-react"
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 
-export const dynamic = "force-dynamic"
+type DashboardMetrics = {
+  todaySales: number
+  todaySalesCount: number
+  lowStockProducts: number
+  pendingTransfers: number
+  topProducts: Array<{ name: string; totalSold: number }>
+}
 
-function formatCurrency(value: number): string {
+type Location = {
+  id: string
+  name: string
+  isActive: boolean
+}
+
+type CashSessionSummary = {
+  id: string
+  locationId: string
+  locationName: string
+  registerLabel: string
+  shiftLabel: "MANANA" | "TARDE" | "OTRO"
+  status: "OPEN" | "CLOSED"
+  businessDate: string | Date
+  openedAt: string | Date
+  closedAt?: string | Date | null
+  openingCashAmount: number
+  countedCashAmount: number | null
+  expectedCashAmount: number
+  differenceAmount: number | null
+  openingNotes?: string | null
+  closingNotes?: string | null
+  salesCount: number
+  totalRaised: number
+  salesBreakdown: Record<"CASH" | "CARD" | "TRANSFER" | "OTHER", number>
+  movementBreakdown: Record<"CASH" | "CARD" | "TRANSFER" | "OTHER", { income: number; expense: number }>
+  externalCashIncome: number
+  externalCashExpense: number
+  sales: Array<{ id: string; invoiceNumber: string; paymentMethod: string; total: number; createdAt: string | Date }>
+  movements: Array<{ id: string; type: string; category: string; paymentMethod: string; amount: number; description: string; createdAt: string | Date; user?: { name?: string | null; email?: string | null } | null }>
+}
+
+function formatCurrency(value: number) {
   return new Intl.NumberFormat("es-AR", {
     style: "currency",
     currency: "ARS",
@@ -26,172 +79,513 @@ function formatCurrency(value: number): string {
   }).format(value)
 }
 
-function formatNumber(value: number): string {
-  return new Intl.NumberFormat("es-AR").format(value)
+function formatDate(value: string | Date | null | undefined) {
+  if (!value) return "-"
+  return new Intl.DateTimeFormat("es-AR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(new Date(value))
 }
 
-const quickLinks = [
-  { href: "/pos", label: "Nueva venta", description: "Cobrá rápido desde caja", icon: ShoppingCart },
-  { href: "/products", label: "Productos", description: "Revisá catálogo y stock", icon: Package },
-  { href: "/purchase-orders", label: "Compras", description: "Seguimiento de abastecimiento", icon: Truck },
-  { href: "/reports", label: "Reportes", description: "Analizá ventas y márgenes", icon: ArrowRight },
-]
+function getTodayDateInputValue() {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = `${now.getMonth() + 1}`.padStart(2, "0")
+  const day = `${now.getDate()}`.padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
 
-export default async function DashboardPage() {
-  const metrics = await getDashboardMetrics()
-  const lowStockRatio = Math.min((metrics.lowStockProducts / 20) * 100, 100)
-  const unitsSold = metrics.topProducts.reduce((acc, product) => acc + product.totalSold, 0)
+export default function DashboardPage() {
+  const [locations, setLocations] = useState<Location[]>([])
+  const [selectedLocationId, setSelectedLocationId] = useState("")
+  const [sessions, setSessions] = useState<CashSessionSummary[]>([])
+  const [selectedSessionId, setSelectedSessionId] = useState("")
+  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [loadingSessions, setLoadingSessions] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+
+  const [openDialog, setOpenDialog] = useState(false)
+  const [registerLabel, setRegisterLabel] = useState("")
+  const [shiftLabel, setShiftLabel] = useState<"MANANA" | "TARDE" | "OTRO">("MANANA")
+  const [businessDate, setBusinessDate] = useState(getTodayDateInputValue())
+  const [openingCashAmount, setOpeningCashAmount] = useState("0")
+  const [openingNotes, setOpeningNotes] = useState("")
+
+  const [closeDialog, setCloseDialog] = useState(false)
+  const [countedCashAmount, setCountedCashAmount] = useState("")
+  const [closingNotes, setClosingNotes] = useState("")
+
+  const [movementDialog, setMovementDialog] = useState(false)
+  const [movementType, setMovementType] = useState<"INCOME" | "EXPENSE">("EXPENSE")
+  const [movementCategory, setMovementCategory] = useState("RETIRO")
+  const [movementMethod, setMovementMethod] = useState<"CASH" | "CARD" | "TRANSFER" | "OTHER">("CASH")
+  const [movementAmount, setMovementAmount] = useState("")
+  const [movementDescription, setMovementDescription] = useState("")
+
+  useEffect(() => {
+    setLoading(true)
+    Promise.all([getLocations(), getDashboardMetrics()])
+      .then(([locationsResult, dashboardMetrics]) => {
+        if (locationsResult.success && locationsResult.data) {
+          const activeLocations = (locationsResult.data as Location[]).filter((location) => location.isActive)
+          setLocations(activeLocations)
+          setSelectedLocationId((current) => current || activeLocations[0]?.id || "")
+        }
+
+        setMetrics(dashboardMetrics as DashboardMetrics)
+      })
+      .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => {
+    if (!selectedLocationId) {
+      setSessions([])
+      setSelectedSessionId("")
+      return
+    }
+
+    setLoadingSessions(true)
+    getCashSessions(selectedLocationId, "OPEN")
+      .then((result) => {
+        const normalized = result as CashSessionSummary[]
+        setSessions(normalized)
+        setSelectedSessionId((current) => (
+          normalized.some((session) => session.id === current)
+            ? current
+            : (normalized[0]?.id || "")
+        ))
+      })
+      .finally(() => setLoadingSessions(false))
+  }, [selectedLocationId])
+
+  const selectedSession = useMemo(
+    () => sessions.find((session) => session.id === selectedSessionId) || null,
+    [sessions, selectedSessionId]
+  )
+
+  async function refreshSessions() {
+    if (!selectedLocationId) return
+    setLoadingSessions(true)
+    const result = await getCashSessions(selectedLocationId, "OPEN")
+    const normalized = result as CashSessionSummary[]
+    setSessions(normalized)
+    setSelectedSessionId((current) => (
+      normalized.some((session) => session.id === current)
+        ? current
+        : (normalized[0]?.id || "")
+    ))
+    setLoadingSessions(false)
+  }
+
+  async function handleOpenCashSession() {
+    if (!selectedLocationId) return
+    setSubmitting(true)
+    const result = await openCashSession({
+      locationId: selectedLocationId,
+      registerLabel,
+      shiftLabel,
+      businessDate,
+      openingCashAmount: Number(openingCashAmount),
+      openingNotes,
+    })
+    setSubmitting(false)
+
+    if (!result.success) {
+      alert(result.error || "Error al abrir caja")
+      return
+    }
+
+    setOpenDialog(false)
+    setRegisterLabel("")
+    setOpeningCashAmount("0")
+    setOpeningNotes("")
+    await refreshSessions()
+  }
+
+  async function handleCloseCashSession() {
+    if (!selectedSession) return
+    setSubmitting(true)
+    const result = await closeCashSession({
+      cashSessionId: selectedSession.id,
+      countedCashAmount: Number(countedCashAmount),
+      closingNotes,
+    })
+    setSubmitting(false)
+
+    if (!result.success) {
+      alert(result.error || "Error al cerrar caja")
+      return
+    }
+
+    setCloseDialog(false)
+    setCountedCashAmount("")
+    setClosingNotes("")
+    await refreshSessions()
+  }
+
+  async function handleCreateMovement() {
+    if (!selectedSession) return
+    setSubmitting(true)
+    const result = await createCashMovement({
+      cashSessionId: selectedSession.id,
+      type: movementType,
+      category: movementCategory as any,
+      paymentMethod: movementMethod,
+      amount: Number(movementAmount),
+      description: movementDescription,
+    })
+    setSubmitting(false)
+
+    if (!result.success) {
+      alert(result.error || "Error al registrar movimiento")
+      return
+    }
+
+    setMovementDialog(false)
+    setMovementAmount("")
+    setMovementDescription("")
+    await refreshSessions()
+  }
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Dashboard"
-        description="Resumen operativo del día con foco en ventas, stock y movimiento comercial."
+        title="Caja"
+        description="Centro operativo para apertura, cierre, arqueo y control del turno activo por sucursal."
         actions={
-          <Badge variant="success">
-            <span className="mr-2 h-2 w-2 rounded-full bg-success" />
-            Operación en línea
-          </Badge>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="info" className="min-h-9 px-3">{sessions.length} cajas abiertas</Badge>
+            <Button onClick={() => setOpenDialog(true)} className="gap-2">
+              <Plus className="h-4 w-4" />
+              Abrir caja
+            </Button>
+          </div>
         }
       />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          label="Ventas de hoy"
-          value={formatCurrency(metrics.todaySales)}
-          helper={`${formatNumber(metrics.todaySalesCount)} transacciones registradas`}
-          icon={DollarSign}
-          iconClassName="text-primary"
-        />
-        <StatCard
-          label="Productos con alerta"
-          value={formatNumber(metrics.lowStockProducts)}
-          helper={`${lowStockRatio.toFixed(0)}% del umbral visual de seguimiento`}
-          icon={AlertTriangle}
-          iconClassName="text-warning"
-        />
-        <StatCard
-          label="Transferencias pendientes"
-          value={formatNumber(metrics.pendingTransfers)}
-          helper="Esperando revisión o confirmación"
-          icon={Truck}
-          iconClassName="text-info"
-        />
-        <StatCard
-          label="Unidades vendidas"
-          value={formatNumber(unitsSold)}
-          helper="Acumulado de los productos con mejor salida"
-          icon={ShoppingCart}
-          iconClassName="text-secondary-foreground"
-        />
+        <StatCard label="Ventas de hoy" value={formatCurrency(metrics?.todaySales || 0)} helper={`${metrics?.todaySalesCount || 0} transacciones`} icon={Receipt} iconClassName="text-primary" />
+        <StatCard label="Alertas de stock" value={metrics?.lowStockProducts || 0} helper="Productos bajo mínimo" icon={AlertTriangle} iconClassName="text-warning" />
+        <StatCard label="Transferencias pendientes" value={metrics?.pendingTransfers || 0} helper="Movimientos por revisar" icon={CreditCard} iconClassName="text-secondary-foreground" />
+        <StatCard label="Cajas abiertas" value={sessions.length} helper="Sesiones activas en la sucursal" icon={Store} iconClassName="text-success-foreground" />
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.35fr_1fr]">
+      <Card>
+        <CardHeader>
+          <CardTitle>Sucursal operativa</CardTitle>
+          <CardDescription>Seleccioná la sucursal para gestionar las cajas activas y abrir nuevas sesiones.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <select
+            value={selectedLocationId}
+            onChange={(event) => setSelectedLocationId(event.target.value)}
+            className="h-11 rounded-md border border-input bg-background px-3 lg:min-w-72"
+          >
+            <option value="">Seleccionar sucursal</option>
+            {locations.map((location) => (
+              <option key={location.id} value={location.id}>{location.name}</option>
+            ))}
+          </select>
+
+          {selectedSession ? (
+            <Link
+              href={`/pos?locationId=${selectedSession.locationId}&cashSessionId=${selectedSession.id}`}
+              className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+            >
+              Ir a nueva venta con {selectedSession.registerLabel}
+            </Link>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
         <Card>
           <CardHeader>
-            <CardTitle>Productos más vendidos</CardTitle>
-            <CardDescription>Lectura rápida del rendimiento comercial del día.</CardDescription>
+            <CardTitle>Cajas abiertas</CardTitle>
+            <CardDescription>Puede haber más de una caja por sucursal; elegí cuál querés revisar o cerrar.</CardDescription>
           </CardHeader>
-          <CardContent>
-            {metrics.topProducts.length > 0 ? (
-              <div className="space-y-4">
-                {metrics.topProducts.map((product, index) => (
-                  <div
-                    key={`${product.name}-${index}`}
-                    className="flex items-center justify-between gap-4 border-b border-border/70 pb-4 last:border-b-0 last:pb-0"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent/80 text-sm font-semibold text-accent-foreground">
-                        #{index + 1}
-                      </div>
-                      <div>
-                        <p className="font-medium text-foreground">{product.name}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {formatNumber(product.totalSold)} unidades vendidas
-                        </p>
-                      </div>
-                    </div>
-                    <p className="text-sm font-medium text-foreground">
-                      {formatCurrency(product.totalSold * 100)}
-                    </p>
-                  </div>
-                ))}
+          <CardContent className="space-y-3">
+            {loading || loadingSessions ? (
+              <div className="flex min-h-48 items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : sessions.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-border bg-muted/20 p-6 text-center text-sm text-muted-foreground">
+                No hay cajas abiertas en esta sucursal.
               </div>
             ) : (
-              <div className="flex min-h-56 flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-muted/20 px-6 text-center">
-                <ShoppingCart className="mb-3 h-10 w-10 text-muted-foreground" />
-                <p className="font-medium text-foreground">Todavía no hay ventas para mostrar.</p>
-                <p className="text-sm text-muted-foreground">Cuando ingresen ventas, acá vas a ver el ranking del día.</p>
-              </div>
+              sessions.map((session) => {
+                const selected = session.id === selectedSessionId
+                return (
+                  <button
+                    key={session.id}
+                    type="button"
+                    onClick={() => setSelectedSessionId(session.id)}
+                    className={`w-full rounded-2xl border p-4 text-left transition-colors ${selected ? "border-primary bg-primary/5" : "border-border/70 bg-muted/10 hover:bg-secondary/22"}`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-medium text-foreground">{session.registerLabel}</p>
+                        <p className="text-sm text-muted-foreground">{session.locationName} · {session.shiftLabel.toLowerCase()}</p>
+                      </div>
+                      <Badge variant="success">Abierta</Badge>
+                    </div>
+                    <div className="mt-3 grid gap-1 text-sm text-muted-foreground">
+                      <p>Apertura: {formatCurrency(session.openingCashAmount)}</p>
+                      <p>Abierta: {formatDate(session.openedAt)}</p>
+                      <p>Ventas: {session.salesCount}</p>
+                    </div>
+                  </button>
+                )
+              })
             )}
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Acciones rápidas</CardTitle>
-            <CardDescription>Accesos directos a los flujos más usados, sin ruido visual.</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-            {quickLinks.map(({ href, label, description, icon: Icon }) => (
-              <Link
-                key={href}
-                href={href}
-                className="group flex items-center justify-between rounded-2xl border border-border/70 bg-muted/20 px-4 py-4 transition-colors hover:bg-secondary/22"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-background shadow-xs transition-colors group-hover:bg-secondary/55">
-                    <Icon className="h-4 w-4 text-foreground" />
-                  </div>
-                  <div>
-                    <p className="font-medium text-foreground">{label}</p>
-                    <p className="text-sm text-muted-foreground">{description}</p>
-                  </div>
+        {selectedSession ? (
+          <div className="space-y-6">
+            <Card>
+              <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <CardTitle>{selectedSession.registerLabel}</CardTitle>
+                  <CardDescription>
+                    {selectedSession.locationName} · turno {selectedSession.shiftLabel.toLowerCase()} · abierta {formatDate(selectedSession.openedAt)}
+                  </CardDescription>
                 </div>
-                <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-              </Link>
-            ))}
-          </CardContent>
-        </Card>
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" onClick={() => setMovementDialog(true)}>Registrar movimiento</Button>
+                  <Button onClick={() => {
+                    setCountedCashAmount(String(selectedSession.expectedCashAmount))
+                    setCloseDialog(true)
+                  }}>
+                    Cerrar caja
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <StatCard label="Efectivo esperado" value={formatCurrency(selectedSession.expectedCashAmount)} helper="Apertura + ventas efectivo + ingresos - egresos" icon={Wallet} />
+                <StatCard label="Ventas en efectivo" value={formatCurrency(selectedSession.salesBreakdown.CASH)} helper="Solo ventas asociadas a esta caja" icon={Banknote} iconClassName="text-primary" />
+                <StatCard label="Ingresos externos" value={formatCurrency(selectedSession.externalCashIncome)} helper="Entradas manuales de efectivo" icon={Plus} iconClassName="text-success-foreground" />
+                <StatCard label="Egresos externos" value={formatCurrency(selectedSession.externalCashExpense)} helper="Retiros, gastos y pagos" icon={AlertTriangle} iconClassName="text-warning" />
+              </CardContent>
+            </Card>
+
+            <div className="grid gap-6 xl:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Resumen recaudado</CardTitle>
+                  <CardDescription>Detalle por medio de pago del turno actual.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm">
+                  <div className="flex justify-between"><span>Efectivo</span><span>{formatCurrency(selectedSession.salesBreakdown.CASH)}</span></div>
+                  <div className="flex justify-between"><span>Tarjeta</span><span>{formatCurrency(selectedSession.salesBreakdown.CARD)}</span></div>
+                  <div className="flex justify-between"><span>Transferencia</span><span>{formatCurrency(selectedSession.salesBreakdown.TRANSFER)}</span></div>
+                  <div className="flex justify-between"><span>Otros</span><span>{formatCurrency(selectedSession.salesBreakdown.OTHER)}</span></div>
+                  <div className="border-t border-border/70 pt-3 flex justify-between font-semibold text-base">
+                    <span>Total recaudado</span>
+                    <span>{formatCurrency(selectedSession.totalRaised)}</span>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Movimiento por medios</CardTitle>
+                  <CardDescription>Entradas y salidas externas registradas en la caja activa.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm">
+                  {(["CASH", "CARD", "TRANSFER", "OTHER"] as const).map((method) => (
+                    <div key={method} className="rounded-xl border border-border/70 p-3">
+                      <p className="font-medium text-foreground">{method}</p>
+                      <div className="mt-2 flex justify-between text-muted-foreground"><span>Ingresos</span><span>{formatCurrency(selectedSession.movementBreakdown[method].income)}</span></div>
+                      <div className="flex justify-between text-muted-foreground"><span>Egresos</span><span>{formatCurrency(selectedSession.movementBreakdown[method].expense)}</span></div>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="grid gap-6 xl:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Movimientos de caja</CardTitle>
+                  <CardDescription>Retiros, gastos, ajustes e ingresos externos del turno.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {selectedSession.movements.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No hay movimientos registrados.</p>
+                  ) : selectedSession.movements.map((movement) => (
+                    <div key={movement.id} className="rounded-xl border border-border/70 p-3 text-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium text-foreground">{movement.category}</p>
+                          <p className="text-muted-foreground">{movement.description}</p>
+                        </div>
+                        <Badge variant={movement.type === "INCOME" ? "success" : "outline"}>{movement.paymentMethod}</Badge>
+                      </div>
+                      <div className="mt-2 flex justify-between text-muted-foreground">
+                        <span>{formatDate(movement.createdAt)}</span>
+                        <span>{movement.type === "INCOME" ? "+" : "-"}{formatCurrency(movement.amount)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Ventas del turno</CardTitle>
+                  <CardDescription>Últimas ventas asociadas a esta caja.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {selectedSession.sales.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Todavía no hay ventas vinculadas a esta caja.</p>
+                  ) : selectedSession.sales.map((sale) => (
+                    <div key={sale.id} className="rounded-xl border border-border/70 p-3 text-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium text-foreground">Factura {sale.invoiceNumber.slice(0, 8)}</p>
+                          <p className="text-muted-foreground">{formatDate(sale.createdAt)}</p>
+                        </div>
+                        <Badge variant="secondary">{sale.paymentMethod}</Badge>
+                      </div>
+                      <p className="mt-2 font-semibold text-foreground">{formatCurrency(sale.total)}</p>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle>Sin caja seleccionada</CardTitle>
+              <CardDescription>Abrí una caja nueva o elegí una caja abierta para ver el arqueo y operar ventas.</CardDescription>
+            </CardHeader>
+          </Card>
+        )}
       </div>
 
-      <Card>
-        <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <CardTitle>Seguimiento operativo</CardTitle>
-            <CardDescription>Estado general de puntos de atención y riesgo de stock.</CardDescription>
-          </div>
-          <Link href="/reports" className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground transition-colors hover:bg-secondary/22 hover:text-secondary-foreground">
-            Ver reportes
-          </Link>
-        </CardHeader>
-        <CardContent className="grid gap-4 lg:grid-cols-3">
-          <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
-            <div className="mb-3 flex items-center gap-2 text-sm font-medium text-muted-foreground">
-              <Store className="h-4 w-4 text-primary" />
-              Estado comercial
+      <Dialog open={openDialog} onOpenChange={setOpenDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Abrir caja</DialogTitle>
+            <DialogDescription>Definí turno, fecha operativa, nombre de caja y monto inicial.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Nombre de caja</Label>
+              <Input value={registerLabel} onChange={(event) => setRegisterLabel(event.target.value)} placeholder="Ej: Caja Mostrador" />
             </div>
-            <p className="text-2xl font-bold text-foreground">{formatNumber(metrics.todaySalesCount)}</p>
-            <p className="text-sm text-muted-foreground">ventas emitidas hoy en el circuito operativo.</p>
-          </div>
-          <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
-            <div className="mb-3 flex items-center gap-2 text-sm font-medium text-muted-foreground">
-              <Package className="h-4 w-4 text-primary" />
-              Riesgo de stock
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Turno</Label>
+                <select value={shiftLabel} onChange={(event) => setShiftLabel(event.target.value as any)} className="w-full h-11 rounded-md border border-input bg-background px-3">
+                  <option value="MANANA">Mañana</option>
+                  <option value="TARDE">Tarde</option>
+                  <option value="OTRO">Otro</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label>Fecha operativa</Label>
+                <Input type="date" value={businessDate} onChange={(event) => setBusinessDate(event.target.value)} />
+              </div>
             </div>
-            <p className="text-2xl font-bold text-foreground">{formatNumber(metrics.lowStockProducts)}</p>
-            <p className="text-sm text-muted-foreground">productos requieren reposición o revisión de mínimos.</p>
-          </div>
-          <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
-            <div className="mb-3 flex items-center gap-2 text-sm font-medium text-muted-foreground">
-              <Truck className="h-4 w-4 text-primary" />
-              Abastecimiento
+            <div className="space-y-2">
+              <Label>Monto inicial en efectivo</Label>
+              <Input type="number" min="0" step="0.01" value={openingCashAmount} onChange={(event) => setOpeningCashAmount(event.target.value)} />
             </div>
-            <p className="text-2xl font-bold text-foreground">{formatNumber(metrics.pendingTransfers)}</p>
-            <p className="text-sm text-muted-foreground">movimientos pendientes para equilibrar inventario.</p>
+            <div className="space-y-2">
+              <Label>Observaciones</Label>
+              <textarea value={openingNotes} onChange={(event) => setOpeningNotes(event.target.value)} className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2" />
+            </div>
+            <Button className="w-full" onClick={handleOpenCashSession} disabled={submitting || !selectedLocationId || !registerLabel}>
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Abrir caja"}
+            </Button>
           </div>
-        </CardContent>
-      </Card>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={closeDialog} onOpenChange={setCloseDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cerrar caja</DialogTitle>
+            <DialogDescription>
+              Ingresá el efectivo contado real. Si hay diferencia, se guarda igual como sobrante o faltante.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-xl border border-border/70 bg-muted/20 p-4 text-sm">
+              <div className="flex justify-between"><span>Efectivo esperado</span><span>{formatCurrency(selectedSession?.expectedCashAmount || 0)}</span></div>
+            </div>
+            <div className="space-y-2">
+              <Label>Efectivo contado</Label>
+              <Input type="number" min="0" step="0.01" value={countedCashAmount} onChange={(event) => setCountedCashAmount(event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Observaciones de cierre</Label>
+              <textarea value={closingNotes} onChange={(event) => setClosingNotes(event.target.value)} className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2" />
+            </div>
+            <Button className="w-full" onClick={handleCloseCashSession} disabled={submitting || !selectedSession}>
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Cerrar caja"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={movementDialog} onOpenChange={setMovementDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Registrar movimiento</DialogTitle>
+            <DialogDescription>Guardá ingresos, egresos, retiros, gastos o ajustes externos del turno.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Tipo</Label>
+                <select value={movementType} onChange={(event) => setMovementType(event.target.value as any)} className="w-full h-11 rounded-md border border-input bg-background px-3">
+                  <option value="INCOME">Ingreso</option>
+                  <option value="EXPENSE">Egreso</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label>Categoría</Label>
+                <select value={movementCategory} onChange={(event) => setMovementCategory(event.target.value)} className="w-full h-11 rounded-md border border-input bg-background px-3">
+                  <option value="INGRESO_MANUAL">Ingreso manual</option>
+                  <option value="EGRESO_MANUAL">Egreso manual</option>
+                  <option value="RETIRO">Retiro</option>
+                  <option value="GASTO">Gasto</option>
+                  <option value="PAGO_PROVEEDOR">Pago proveedor</option>
+                  <option value="AJUSTE">Ajuste</option>
+                </select>
+              </div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Medio</Label>
+                <select value={movementMethod} onChange={(event) => setMovementMethod(event.target.value as any)} className="w-full h-11 rounded-md border border-input bg-background px-3">
+                  <option value="CASH">Efectivo</option>
+                  <option value="CARD">Tarjeta</option>
+                  <option value="TRANSFER">Transferencia</option>
+                  <option value="OTHER">Otro</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label>Monto</Label>
+                <Input type="number" min="0" step="0.01" value={movementAmount} onChange={(event) => setMovementAmount(event.target.value)} />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Detalle</Label>
+              <textarea value={movementDescription} onChange={(event) => setMovementDescription(event.target.value)} className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2" />
+            </div>
+            <Button className="w-full" onClick={handleCreateMovement} disabled={submitting || !selectedSession || !movementAmount || !movementDescription}>
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Guardar movimiento"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

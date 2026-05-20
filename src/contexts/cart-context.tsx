@@ -1,7 +1,20 @@
 "use client"
 
-import { createContext, useContext, useState, ReactNode } from "react"
+import { createContext, useContext, useEffect, useState, ReactNode } from "react"
 import { CartItem } from "@/types/auth"
+
+const CART_STORAGE_KEY = "novapos-cart"
+
+function loadCartFromStorage(): CartItem[] {
+  if (typeof window === "undefined") return []
+
+  try {
+    const raw = localStorage.getItem(CART_STORAGE_KEY)
+    return raw ? JSON.parse(raw) : []
+  } catch {
+    return []
+  }
+}
 
 interface CartContextType {
   items: CartItem[]
@@ -17,6 +30,22 @@ const CartContext = createContext<CartContextType | undefined>(undefined)
 
 export function CartProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([])
+  const [hydrated, setHydrated] = useState(false)
+
+  useEffect(() => {
+    setItems(loadCartFromStorage())
+    setHydrated(true)
+  }, [])
+
+  useEffect(() => {
+    if (!hydrated || typeof window === "undefined") return
+
+    try {
+      localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(items))
+    } catch {
+      // Ignore localStorage failures silently
+    }
+  }, [items, hydrated])
 
   function addItem(product: { id: string; name: string; price: number; sku?: string | null; barcode?: string | null }) {
     setItems((prev) => {

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 
 import { createProduct, deleteProduct, getCategories, getProducts, updateProduct } from "@/app/actions/products"
+import { getLocations } from "@/app/actions/locations"
 import { PageHeader, StatCard } from "@/components/dashboard/page-primitives"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -57,6 +58,7 @@ import {
 
 interface Product {
   id: string
+  productNumber: number
   name: string
   slug: string
   sku: string | null
@@ -67,6 +69,8 @@ interface Product {
   image: string | null
   isActive: boolean
   lowStockThreshold: number
+  unitOfMeasure: "UNIT" | "ML" | "G" | "KG" | "LT" | "OTHER"
+  customUnitName: string | null
   categoryId: string | null
   category: { id: string; name: string } | null
   createdAt: Date
@@ -75,6 +79,21 @@ interface Product {
 interface Category {
   id: string
   name: string
+}
+
+interface Location {
+  id: string
+  name: string
+  isActive: boolean
+}
+
+const unitLabels: Record<Product["unitOfMeasure"], string> = {
+  UNIT: "Unidad",
+  ML: "Mililitros",
+  G: "Gramos",
+  KG: "Kilogramos",
+  LT: "Litros",
+  OTHER: "Otra",
 }
 
 function formatCurrency(amount: number) {
@@ -89,6 +108,7 @@ function formatCurrency(amount: number) {
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<Category[]>([])
+  const [locations, setLocations] = useState<Location[]>([])
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
@@ -103,9 +123,10 @@ export default function ProductsPage() {
   const loadData = useCallback(async () => {
     setLoading(true)
 
-    const [productsResult, categoriesResult] = await Promise.all([
+    const [productsResult, categoriesResult, locationsResult] = await Promise.all([
       getProducts(page, limit, search, categoryFilter === "all" ? undefined : categoryFilter),
       getCategories(),
+      getLocations(),
     ])
 
     if (productsResult.success && productsResult.data) {
@@ -115,6 +136,10 @@ export default function ProductsPage() {
 
     if (categoriesResult.success && categoriesResult.data) {
       setCategories(categoriesResult.data as Category[])
+    }
+
+    if (locationsResult.success && locationsResult.data) {
+      setLocations((locationsResult.data as Location[]).filter((location) => location.isActive))
     }
 
     setLoading(false)
@@ -198,13 +223,13 @@ export default function ProductsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Filtros</CardTitle>
-          <CardDescription>Buscá por nombre, SKU o código de barras y reducí el ruido visual del listado.</CardDescription>
+            <CardDescription>Buscá por nombre, ID o código de barras y reducí el ruido visual del listado.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4 lg:flex-row lg:items-center">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Buscar por nombre, SKU o código de barras..."
+              placeholder="Buscar por nombre, ID o código de barras..."
               className="h-11 pl-10"
               value={search}
               onChange={(event) => {
@@ -252,7 +277,7 @@ export default function ProductsPage() {
                   <TableRow>
                     <TableHead>Producto</TableHead>
                     <TableHead className="hidden md:table-cell">Categoría</TableHead>
-                    <TableHead>SKU / código</TableHead>
+                    <TableHead>ID / código</TableHead>
                     <TableHead className="hidden lg:table-cell text-right">Costo</TableHead>
                     <TableHead className="text-right">Precio</TableHead>
                     <TableHead className="hidden sm:table-cell text-center">Estado</TableHead>
@@ -268,6 +293,9 @@ export default function ProductsPage() {
                           <p className="line-clamp-1 text-sm text-muted-foreground">
                             {product.description || "Sin descripción adicional"}
                           </p>
+                          <p className="text-xs text-muted-foreground">
+                            {unitLabels[product.unitOfMeasure]}{product.customUnitName ? ` · ${product.customUnitName}` : ""}
+                          </p>
                           <div className="flex flex-wrap gap-2 md:hidden">
                             {product.category ? <Badge variant="secondary">{product.category.name}</Badge> : null}
                             <Badge variant={product.isActive ? "default" : "outline"}>
@@ -281,7 +309,7 @@ export default function ProductsPage() {
                       </TableCell>
                       <TableCell className="whitespace-normal">
                         <div className="space-y-1 text-sm">
-                          <p>{product.sku || "Sin SKU"}</p>
+                          <p>ID {product.productNumber}</p>
                           <p className="text-muted-foreground">{product.barcode || "Sin código de barras"}</p>
                         </div>
                       </TableCell>
@@ -387,8 +415,8 @@ export default function ProductsPage() {
                 <Input id="name" name="name" defaultValue={editingProduct?.name} required />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="sku">SKU</Label>
-                <Input id="sku" name="sku" defaultValue={editingProduct?.sku || ""} />
+                <Label htmlFor="productNumber">ID</Label>
+                <Input id="productNumber" value={editingProduct ? String(editingProduct.productNumber) : "Automático al crear"} readOnly disabled />
               </div>
             </div>
 
@@ -419,22 +447,70 @@ export default function ProductsPage() {
               </div>
             </div>
 
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="unitOfMeasure">Unidad de medida</Label>
+                <select
+                  id="unitOfMeasure"
+                  name="unitOfMeasure"
+                  defaultValue={editingProduct?.unitOfMeasure || "UNIT"}
+                  className="w-full h-11 rounded-md border border-input bg-background px-3"
+                >
+                  <option value="UNIT">Unidad</option>
+                  <option value="ML">Mililitros</option>
+                  <option value="G">Gramos</option>
+                  <option value="KG">Kilogramos</option>
+                  <option value="LT">Litros</option>
+                  <option value="OTHER">Otra</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="customUnitName">Unidad personalizada</Label>
+                <Input id="customUnitName" name="customUnitName" defaultValue={editingProduct?.customUnitName || ""} placeholder="Ej: pack, caja, docena" />
+              </div>
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="categoryId">Categoría</Label>
-              <Select name="categoryId" defaultValue={editingProduct?.categoryId || "unassigned"}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar categoría" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="unassigned">Sin categoría</SelectItem>
-                  {categories.map((category) => (
-                    <SelectItem key={category.id} value={category.id}>
-                      {category.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <select
+                id="categoryId"
+                name="categoryId"
+                defaultValue={editingProduct?.categoryId || "unassigned"}
+                className="w-full h-11 rounded-md border border-input bg-background px-3"
+              >
+                <option value="unassigned">Sin categoría</option>
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
             </div>
+
+            {!editingProduct ? (
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="initialStock">Stock inicial</Label>
+                  <Input id="initialStock" name="initialStock" type="number" min="0" defaultValue="0" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="initialLocationId">Sucursal del stock inicial</Label>
+                  <select
+                    id="initialLocationId"
+                    name="initialLocationId"
+                    defaultValue=""
+                    className="w-full h-11 rounded-md border border-input bg-background px-3"
+                  >
+                    <option value="">Seleccionar sucursal</option>
+                    {locations.map((location) => (
+                      <option key={location.id} value={location.id}>
+                        {location.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            ) : null}
 
             <div className="space-y-2">
               <Label htmlFor="image">URL de imagen</Label>

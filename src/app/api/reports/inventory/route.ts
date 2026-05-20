@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { format } from "date-fns";
 
+const db = prisma as any
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -17,7 +19,7 @@ export async function GET(request: Request) {
     };
 
     // Get all inventory with product and location details
-    const inventory = await prisma.inventory.findMany({
+    const inventory = await db.inventory.findMany({
       include: {
         product: {
           include: {
@@ -30,20 +32,20 @@ export async function GET(request: Request) {
 
     // Filter by location if provided
     let filteredInventory = locationId 
-      ? inventory.filter(inv => inv.locationId === locationId)
+      ? inventory.filter((inv: any) => inv.locationId === locationId)
       : inventory;
 
     // Filter by low stock if requested
     if (lowStockOnly === "true") {
       filteredInventory = filteredInventory.filter(
-        inv => inv.quantity <= inv.product.lowStockThreshold
+        (inv: any) => inv.quantity <= inv.product.lowStockThreshold
       );
     }
 
     // Filter by date range (based on last update)
-    let reportRows = filteredInventory.map(inv => ({
+    let reportRows = filteredInventory.map((inv: any) => ({
       id: inv.id,
-      sku: inv.product.sku || "N/A",
+      productNumber: (inv.product as any).productNumber,
       product: inv.product.name,
       category: inv.product.category?.name || "Sin categoría",
       location: inv.location.name,
@@ -55,12 +57,12 @@ export async function GET(request: Request) {
     }));
 
     // Calculate summary
-    const locations = new Set(reportRows.map(r => r.location));
+    const locations = new Set(reportRows.map((r: any) => r.location));
     const summary = {
       totalProducts: reportRows.length,
       totalLocations: locations.size,
-      totalStockValue: reportRows.reduce((sum, row) => sum + row.stockValue, 0),
-      lowStockCount: reportRows.filter(r => r.isLowStock).length,
+      totalStockValue: reportRows.reduce((sum: number, row: any) => sum + row.stockValue, 0),
+      lowStockCount: reportRows.filter((r: any) => r.isLowStock).length,
     };
 
     return NextResponse.json({ data: reportRows, summary });

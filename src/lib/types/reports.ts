@@ -45,7 +45,7 @@ export interface SalesReportSummary {
 
 export interface InventoryReportRow {
   id: string;
-  sku: string;
+  productNumber: number;
   product: string;
   category: string;
   location: string;
