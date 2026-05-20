@@ -89,7 +89,7 @@ export async function createSale(data: {
       items.map((item) => ({
         productId: item.productId,
         quantity: item.quantity,
-        unitPrice: productPriceMap.get(item.productId) ?? item.unitPrice,
+        unitPrice: productPriceMap.get(item.productId) ?? Number(item.unitPrice),
       })),
       activePromotions
     )

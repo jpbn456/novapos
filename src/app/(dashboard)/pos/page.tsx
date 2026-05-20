@@ -20,7 +20,9 @@ import { getLocations } from "@/app/actions/locations"
 import { getProducts } from "@/app/actions/products"
 import { createSale } from "@/app/actions/sales"
 import { getCashSessions } from "@/app/actions/cash"
+import { getActivePromotions } from "@/app/actions/promotions"
 import { useCart, CartProvider } from "@/contexts/cart-context"
+import { calculatePromotionalPricing, type PromotionPricingInput } from "@/lib/pricing"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -62,6 +64,33 @@ interface CashSessionOption {
   status: "OPEN" | "CLOSED"
 }
 
+interface PricingView {
+  subtotal: number
+  total: number
+  savings: number
+  lines: Array<{
+    productId: string
+    quantity: number
+    baseUnitPrice: number
+    effectiveUnitPrice: number
+    originalSubtotal: number
+    discountedSubtotal: number
+    savings: number
+    appliedPromotions: Array<{
+      promotionId: string
+      promotionName: string
+      type: "COMBO" | "SCALE"
+      discount: number
+    }>
+  }>
+  appliedPromotions: Array<{
+    promotionId: string
+    promotionName: string
+    type: "COMBO" | "SCALE"
+    discount: number
+  }>
+}
+
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("es-AR", {
     style: "currency",
@@ -79,6 +108,7 @@ function POSContent() {
   const [locations, setLocations] = useState<Location[]>([])
   const [cashSessions, setCashSessions] = useState<CashSessionOption[]>([])
   const [products, setProducts] = useState<Product[]>([])
+  const [promotions, setPromotions] = useState<PromotionPricingInput[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
   const [locationId, setLocationId] = useState("")
@@ -93,7 +123,7 @@ function POSContent() {
 
   async function loadData() {
     setLoading(true)
-    const [locationsResult, productsResult] = await Promise.all([getLocations(), getProducts(1, 50)])
+    const [locationsResult, productsResult, promotionsResult] = await Promise.all([getLocations(), getProducts(1, 50), getActivePromotions()])
 
     if (locationsResult.success && locationsResult.data) {
       const activeLocations = (locationsResult.data as any[]).filter((location) => location.isActive)
@@ -109,6 +139,8 @@ function POSContent() {
     if (productsResult.success && productsResult.data) {
       setProducts(productsResult.data.products as Product[])
     }
+
+    setPromotions(promotionsResult as PromotionPricingInput[])
 
     setLoading(false)
   }
@@ -167,10 +199,10 @@ function POSContent() {
       locationId,
       cashSessionId,
       paymentMethod,
-      items: items.map((item) => ({
-        productId: item.productId,
-        quantity: item.quantity,
-        unitPrice: item.price,
+      items: pricing.lines.map((line) => ({
+        productId: line.productId,
+        quantity: line.quantity,
+        unitPrice: line.effectiveUnitPrice,
       })),
     }).then((result) => {
       setSubmitting(false)
@@ -198,6 +230,15 @@ function POSContent() {
 
   const currentLocation = locations.find((location) => location.id === locationId)
   const currentCashSession = cashSessions.find((session) => session.id === cashSessionId)
+  const pricing = useMemo<PricingView>(() => calculatePromotionalPricing(
+    items.map((item) => ({
+      productId: item.productId,
+      quantity: item.quantity,
+      unitPrice: item.price,
+      name: item.name,
+    })),
+    promotions
+  ), [items, promotions])
 
   if (saleComplete) {
     return (
@@ -390,6 +431,11 @@ function POSContent() {
                           <div className="min-w-0 space-y-1">
                             <p className="font-medium text-foreground">{item.name}</p>
                             <p className="text-xs text-muted-foreground">{formatCurrency(item.price)} c/u</p>
+                            {pricing.lines.find((line) => line.productId === item.productId)?.savings ? (
+                              <p className="text-xs text-success-foreground">
+                                Ahorro: {formatCurrency(pricing.lines.find((line) => line.productId === item.productId)?.savings || 0)}
+                              </p>
+                            ) : null}
                           </div>
                           <Button
                             variant="ghost"
@@ -420,7 +466,12 @@ function POSContent() {
                               <Plus className="h-4 w-4" />
                             </Button>
                           </div>
-                          <p className="text-right font-medium text-foreground">{formatCurrency(item.subtotal)}</p>
+                          <div className="text-right">
+                            {pricing.lines.find((line) => line.productId === item.productId)?.savings ? (
+                              <p className="text-xs text-muted-foreground line-through">{formatCurrency(item.subtotal)}</p>
+                            ) : null}
+                            <p className="font-medium text-foreground">{formatCurrency(pricing.lines.find((line) => line.productId === item.productId)?.discountedSubtotal || item.subtotal)}</p>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -435,6 +486,11 @@ function POSContent() {
                               <div className="space-y-1">
                                 <p className="font-medium text-foreground">{item.name}</p>
                                 <p className="text-xs text-muted-foreground">{formatCurrency(item.price)} c/u</p>
+                                {pricing.lines.find((line) => line.productId === item.productId)?.savings ? (
+                                  <p className="text-xs text-success-foreground">
+                                    Ahorro: {formatCurrency(pricing.lines.find((line) => line.productId === item.productId)?.savings || 0)}
+                                  </p>
+                                ) : null}
                               </div>
                             </TableCell>
                             <TableCell>
@@ -458,7 +514,10 @@ function POSContent() {
                             </TableCell>
                             <TableCell className="text-right">
                               <div className="space-y-1">
-                                <p className="font-medium text-foreground">{formatCurrency(item.subtotal)}</p>
+                                {pricing.lines.find((line) => line.productId === item.productId)?.savings ? (
+                                  <p className="text-xs text-muted-foreground line-through">{formatCurrency(item.subtotal)}</p>
+                                ) : null}
+                                <p className="font-medium text-foreground">{formatCurrency(pricing.lines.find((line) => line.productId === item.productId)?.discountedSubtotal || item.subtotal)}</p>
                                 <Button
                                   variant="ghost"
                                   size="icon-sm"
@@ -484,11 +543,35 @@ function POSContent() {
                   <span>Items</span>
                   <span>{getItemCount()}</span>
                 </div>
+                <div className="mt-2 flex items-center justify-between text-sm text-muted-foreground">
+                  <span>Subtotal base</span>
+                  <span>{formatCurrency(items.reduce((sum, item) => sum + item.subtotal, 0))}</span>
+                </div>
+                {pricing.savings > 0 ? (
+                  <div className="mt-2 flex items-center justify-between text-sm text-success-foreground">
+                    <span>Ahorro promociones</span>
+                    <span>-{formatCurrency(pricing.savings)}</span>
+                  </div>
+                ) : null}
                 <div className="mt-2 flex items-center justify-between text-xl font-semibold text-foreground">
                   <span>Total</span>
-                  <span>{formatCurrency(getTotal())}</span>
+                  <span>{formatCurrency(pricing.total)}</span>
                 </div>
               </div>
+
+              {pricing.appliedPromotions.length > 0 ? (
+                <div className="rounded-2xl border border-success/30 bg-success/10 p-4">
+                  <p className="text-sm font-medium text-foreground">Promociones aplicadas</p>
+                  <div className="mt-3 space-y-2 text-sm text-muted-foreground">
+                    {pricing.appliedPromotions.map((promotion, index) => (
+                      <div key={`${promotion.promotionId}-${index}`} className="flex items-center justify-between gap-3">
+                        <span>{promotion.promotionName}</span>
+                        <span className="text-success-foreground">-{formatCurrency(promotion.discount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
               <div className="space-y-2">
                 <Label>Método de pago</Label>
