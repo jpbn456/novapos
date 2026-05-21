@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { Suspense, useEffect, useState } from "react"
 import { Sidebar } from "@/components/layout/sidebar"
 import { useSession } from "next-auth/react"
 
@@ -24,7 +24,9 @@ export default function DashboardLayout({
 
   return (
     <div className="min-h-screen bg-background">
-      <Sidebar userRole={userRole} userName={userName} />
+      <Suspense fallback={null}>
+        <Sidebar userRole={userRole} userName={userName} />
+      </Suspense>
       <main className="lg:pl-64">
         <div className="min-h-screen bg-background/60 px-4 py-4 pt-20 sm:px-6 sm:py-6 sm:pt-24 lg:p-6">
           <div className="mx-auto max-w-7xl animate-fade-in">
