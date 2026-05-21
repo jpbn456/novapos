@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { Suspense, useCallback, useEffect, useState } from "react"
 import { endOfMonth, format, startOfMonth, subDays } from "date-fns"
 import { CalendarRange, Loader2 } from "lucide-react"
 import { useRouter, useSearchParams } from "next/navigation"
@@ -53,7 +53,7 @@ const datePresets = [
   { label: "Mes completo", getValue: () => ({ startDate: format(startOfMonth(new Date()), "yyyy-MM-dd"), endDate: format(endOfMonth(new Date()), "yyyy-MM-dd") }) },
 ]
 
-export default function ReportsPage() {
+function ReportsPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]["id"]>("sales")
@@ -189,5 +189,13 @@ export default function ReportsPage() {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+export default function ReportsPage() {
+  return (
+    <Suspense fallback={null}>
+      <ReportsPageContent />
+    </Suspense>
   )
 }
