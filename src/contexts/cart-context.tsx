@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from "react"
 import { CartItem } from "@/types/auth"
+import { roundQuantity } from "@/lib/quantity"
 
 const CART_STORAGE_KEY = "novapos-cart"
 
@@ -18,7 +19,7 @@ function loadCartFromStorage(): CartItem[] {
 
 interface CartContextType {
   items: CartItem[]
-  addItem: (product: { id: string; name: string; price: number; sku?: string | null; barcode?: string | null }) => void
+  addItem: (product: { id: string; name: string; price: number; sku?: string | null; barcode?: string | null; unitOfMeasure?: CartItem["unitOfMeasure"]; customUnitName?: string | null }) => void
   removeItem: (productId: string) => void
   updateQuantity: (productId: string, quantity: number) => void
   clearCart: () => void
@@ -47,13 +48,13 @@ export function CartProvider({ children }: { children: ReactNode }) {
     }
   }, [items, hydrated])
 
-  function addItem(product: { id: string; name: string; price: number; sku?: string | null; barcode?: string | null }) {
+  function addItem(product: { id: string; name: string; price: number; sku?: string | null; barcode?: string | null; unitOfMeasure?: CartItem["unitOfMeasure"]; customUnitName?: string | null }) {
     setItems((prev) => {
       const existing = prev.find((item) => item.productId === product.id)
       if (existing) {
         return prev.map((item) =>
           item.productId === product.id
-            ? { ...item, quantity: item.quantity + 1, subtotal: (item.quantity + 1) * item.price }
+            ? { ...item, quantity: roundQuantity(item.quantity + 1), subtotal: roundQuantity(item.quantity + 1) * item.price }
             : item
         )
       }
@@ -65,6 +66,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
           price: product.price,
           quantity: 1,
           subtotal: product.price,
+          unitOfMeasure: product.unitOfMeasure,
+          customUnitName: product.customUnitName || null,
           sku: product.sku,
           barcode: product.barcode,
         },
@@ -77,14 +80,16 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }
 
   function updateQuantity(productId: string, quantity: number) {
-    if (quantity <= 0) {
+    const normalizedQuantity = roundQuantity(quantity)
+
+    if (normalizedQuantity <= 0) {
       removeItem(productId)
       return
     }
     setItems((prev) =>
       prev.map((item) =>
         item.productId === productId
-          ? { ...item, quantity, subtotal: quantity * item.price }
+          ? { ...item, quantity: normalizedQuantity, subtotal: normalizedQuantity * item.price }
           : item
       )
     )
@@ -95,11 +100,11 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }
 
   function getTotal() {
-    return items.reduce((sum, item) => sum + item.subtotal, 0)
+    return Math.round((items.reduce((sum, item) => sum + item.subtotal, 0) + Number.EPSILON) * 100) / 100
   }
 
   function getItemCount() {
-    return items.reduce((sum, item) => sum + item.quantity, 0)
+    return roundQuantity(items.reduce((sum, item) => sum + item.quantity, 0))
   }
 
   return (

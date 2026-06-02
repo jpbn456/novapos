@@ -15,7 +15,7 @@ const createOrderSchema = z.object({
   items: z.array(
     z.object({
       productId: z.string().min(1, 'Product is required'),
-      quantity: z.number().int().positive('Quantity must be positive'),
+      quantity: z.number().positive('Quantity must be positive'),
       unitCost: z.number().positive('Unit cost must be positive'),
     })
   ).min(1, 'At least one item is required'),
@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
         items: {
           include: {
             product: {
-              select: { id: true, name: true, productNumber: true },
+              select: { id: true, name: true, productNumber: true, unitOfMeasure: true, customUnitName: true },
             },
           },
         },
@@ -124,7 +124,7 @@ export async function POST(request: NextRequest) {
         items: {
           include: {
             product: {
-              select: { id: true, name: true, productNumber: true },
+              select: { id: true, name: true, productNumber: true, unitOfMeasure: true, customUnitName: true },
             },
           },
         },

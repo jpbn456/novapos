@@ -1,3 +1,5 @@
+import { roundQuantity } from "@/lib/quantity"
+
 export type PurchaseOrderStatusValue =
   | "PENDING"
   | "CONFIRMED"
@@ -27,8 +29,8 @@ export function derivePurchaseOrderStatus(
     return fallbackStatus
   }
 
-  const anyReceived = items.some((item) => item.receivedQty > 0)
-  const allReceived = items.every((item) => item.receivedQty >= item.quantity)
+  const anyReceived = items.some((item) => toNumber(item.receivedQty) > 0)
+  const allReceived = items.every((item) => toNumber(item.receivedQty) >= toNumber(item.quantity))
 
   if (allReceived) return "RECEIVED"
   if (anyReceived) return "PARTIALLY_RECEIVED"
@@ -36,7 +38,7 @@ export function derivePurchaseOrderStatus(
 }
 
 export function hasReceivedItems(items: Array<Pick<PurchaseOrderItemLike, "receivedQty">>) {
-  return items.some((item) => item.receivedQty > 0)
+  return items.some((item) => toNumber(item.receivedQty) > 0)
 }
 
 function toNumber(value: unknown) {
@@ -51,6 +53,8 @@ export function serializePurchaseOrder<T extends { subtotal: unknown; tax: unkno
     total: toNumber(order.total),
     items: order.items?.map((item: any) => ({
       ...item,
+      quantity: roundQuantity(toNumber(item.quantity)),
+      receivedQty: roundQuantity(toNumber(item.receivedQty)),
       unitCost: toNumber(item.unitCost),
       subtotal: toNumber(item.subtotal),
       product: item.product

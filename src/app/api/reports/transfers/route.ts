@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { format } from "date-fns";
+import { roundQuantity } from "@/lib/quantity";
 
 export async function GET(request: Request) {
   try {
@@ -66,7 +67,7 @@ export async function GET(request: Request) {
           user: transfer.user.name || "N/A",
           status: transfer.status,
           product: item.product.name,
-          quantity: item.quantity,
+          quantity: roundQuantity(Number(item.quantity)),
           notes: transfer.notes,
         });
       }

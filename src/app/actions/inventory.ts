@@ -4,6 +4,7 @@ import { auth } from "@/auth"
 import { resolveSessionUserId } from "@/lib/auth/session-user"
 import { applyInventoryMovement } from "@/lib/inventory"
 import { prisma } from "@/lib/prisma"
+import { roundQuantity } from "@/lib/quantity"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
@@ -14,7 +15,7 @@ const manualInventoryMovementSchema = z.object({
   productId: z.string().min(1, "Producto requerido"),
   locationId: z.string().min(1, "Sucursal requerida"),
   type: z.enum(["MANUAL_IN", "MANUAL_OUT"]),
-  quantity: z.number().int().positive("La cantidad debe ser positiva"),
+  quantity: z.number().positive("La cantidad debe ser positiva"),
   notes: z.string().min(3, "Indicá un motivo").max(500, "Motivo demasiado largo"),
 })
 
@@ -52,6 +53,9 @@ export async function getInventoryMovements(locationId?: string, limit = 100) {
 
   return movements.map((movement: any) => ({
     ...movement,
+    quantityDelta: roundQuantity(Number(movement.quantityDelta)),
+    quantityBefore: roundQuantity(Number(movement.quantityBefore)),
+    quantityAfter: roundQuantity(Number(movement.quantityAfter)),
     product: {
       ...movement.product,
       customUnitName: movement.product.customUnitName || null,

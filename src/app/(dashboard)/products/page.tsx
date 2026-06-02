@@ -442,7 +442,7 @@ export default function ProductsPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="lowStockThreshold">Stock mínimo</Label>
-                <Input id="lowStockThreshold" name="lowStockThreshold" type="number" min="0" defaultValue={editingProduct?.lowStockThreshold || 10} />
+                <Input id="lowStockThreshold" name="lowStockThreshold" type="number" min="0" step="0.001" defaultValue={editingProduct?.lowStockThreshold || 10} />
               </div>
             </div>
 
@@ -490,7 +490,7 @@ export default function ProductsPage() {
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="initialStock">Stock inicial</Label>
-                  <Input id="initialStock" name="initialStock" type="number" min="0" defaultValue="0" />
+                  <Input id="initialStock" name="initialStock" type="number" min="0" step="0.001" defaultValue="0" />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="initialLocationId">Sucursal del stock inicial</Label>

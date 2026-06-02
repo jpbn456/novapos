@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
+import { roundQuantity } from "@/lib/quantity"
 import { z } from "zod"
 
 const productSchema = z.object({
@@ -12,7 +13,7 @@ const productSchema = z.object({
   cost: z.number().optional(),
   barcode: z.string().max(50).optional(),
   image: z.string().url().optional(),
-  lowStockThreshold: z.number().int().min(0).default(10),
+  lowStockThreshold: z.number().min(0).default(10),
   categoryId: z.string().optional(),
 })
 
@@ -47,6 +48,7 @@ export async function GET(
       ...product,
       price: Number(product.price),
       cost: product.cost ? Number(product.cost) : null,
+      lowStockThreshold: roundQuantity(Number(product.lowStockThreshold)),
     })
   } catch (error) {
     console.error("Error fetching product:", error)
@@ -121,6 +123,7 @@ export async function PUT(
       ...product,
       price: Number(product.price),
       cost: product.cost ? Number(product.cost) : null,
+      lowStockThreshold: roundQuantity(Number(product.lowStockThreshold)),
     })
   } catch (error) {
     console.error("Error updating product:", error)

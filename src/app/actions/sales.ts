@@ -9,12 +9,13 @@ import { resolveSessionUserId } from "@/lib/auth/session-user"
 import { applyInventoryMovement } from "@/lib/inventory"
 import { getActivePromotionsData } from "@/lib/promotion-data"
 import { calculatePromotionalPricing } from "@/lib/pricing"
+import { roundQuantity } from "@/lib/quantity"
 
 const db = prisma as any
 
 const saleItemSchema = z.object({
   productId: z.string(),
-  quantity: z.number().int().positive(),
+  quantity: z.number().positive(),
   unitPrice: z.number().positive(),
 })
 
@@ -114,7 +115,7 @@ export async function createSale(data: {
           },
         })
 
-        if (!inventory || inventory.quantity < item.quantity) {
+        if (!inventory || Number(inventory.quantity) < item.quantity) {
           throw new Error(
             `Stock insuficiente para el producto`
           )
@@ -186,6 +187,7 @@ export async function createSale(data: {
         appliedPromotions: pricing.appliedPromotions,
         items: sale.items.map((item: any) => ({
           ...item,
+          quantity: roundQuantity(Number(item.quantity)),
           unitPrice: Number(item.unitPrice),
           subtotal: Number(item.subtotal),
           product: {
@@ -245,6 +247,7 @@ export async function getTodaySales(locationId?: string): Promise<ActionResult<a
         total: Number(sale.total),
         items: sale.items.map((item) => ({
           ...item,
+          quantity: roundQuantity(Number(item.quantity)),
           unitPrice: Number(item.unitPrice),
           subtotal: Number(item.subtotal),
         })),

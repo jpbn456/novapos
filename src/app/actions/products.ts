@@ -8,6 +8,7 @@ import { ActionResult, ProductData } from "@/types/auth"
 import { auth } from "@/auth"
 import { resolveSessionUserId } from "@/lib/auth/session-user"
 import { applyInventoryMovement } from "@/lib/inventory"
+import { roundQuantity } from "@/lib/quantity"
 
 const db = prisma as any
 
@@ -24,10 +25,10 @@ const productSchema = z.object({
   cost: z.coerce.number().optional(),
   barcode: z.string().max(50).optional(),
   image: z.string().url().optional(),
-  lowStockThreshold: z.coerce.number().int().min(0).default(10),
+  lowStockThreshold: z.coerce.number().min(0).default(10),
   unitOfMeasure: z.enum(["UNIT", "ML", "G", "KG", "LT", "OTHER"]).default("UNIT"),
   customUnitName: z.string().max(40).optional(),
-  initialStock: z.coerce.number().int().min(0).default(0),
+  initialStock: z.coerce.number().min(0).default(0),
   initialLocationId: z.string().optional(),
   categoryId: z.string().optional(),
 })
@@ -37,6 +38,7 @@ function serializeProduct(p: any): ProductData {
     ...p,
     price: Number(p.price),
     cost: p.cost ? Number(p.cost) : null,
+    lowStockThreshold: roundQuantity(Number(p.lowStockThreshold)),
     customUnitName: p.customUnitName || null,
   }
 }

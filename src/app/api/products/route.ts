@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
+import { roundQuantity } from "@/lib/quantity"
 import { z } from "zod"
 
 const productSchema = z.object({
@@ -12,7 +13,7 @@ const productSchema = z.object({
   cost: z.number().optional(),
   barcode: z.string().max(50).optional(),
   image: z.string().url().optional(),
-  lowStockThreshold: z.number().int().min(0).default(10),
+  lowStockThreshold: z.number().min(0).default(10),
   categoryId: z.string().optional(),
 })
 
@@ -70,6 +71,7 @@ export async function GET(request: NextRequest) {
         ...p,
         price: Number(p.price),
         cost: p.cost ? Number(p.cost) : null,
+        lowStockThreshold: roundQuantity(Number(p.lowStockThreshold)),
       })),
       total,
       page,
@@ -143,6 +145,7 @@ export async function POST(request: NextRequest) {
         ...product,
         price: Number(product.price),
         cost: product.cost ? Number(product.cost) : null,
+        lowStockThreshold: roundQuantity(Number(product.lowStockThreshold)),
       },
       { status: 201 }
     )

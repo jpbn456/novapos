@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { format } from "date-fns";
+import { roundQuantity } from "@/lib/quantity";
 
 function parseDateBoundary(value: string | null, endOfDay = false) {
   if (!value) return null;
@@ -78,7 +79,7 @@ export async function GET(request: Request) {
             location: sale.location.name,
             cashier: sale.user.name || "N/A",
             product: item.product.name,
-            quantity: item.quantity,
+            quantity: roundQuantity(Number(item.quantity)),
             unitPrice: Number(item.unitPrice),
             subtotal: Number(item.subtotal),
             tax: Number(sale.tax),
@@ -97,7 +98,7 @@ export async function GET(request: Request) {
             location: sale.location.name,
             cashier: sale.user.name || "N/A",
             product: item.product.name,
-            quantity: item.quantity,
+            quantity: roundQuantity(Number(item.quantity)),
             unitPrice: Number(item.unitPrice),
             subtotal: Number(item.subtotal),
             tax: Number(sale.tax),

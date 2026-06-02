@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { format } from "date-fns";
+import { roundQuantity } from "@/lib/quantity";
 
 const db = prisma as any
 
@@ -38,7 +39,7 @@ export async function GET(request: Request) {
     // Filter by low stock if requested
     if (lowStockOnly === "true") {
       filteredInventory = filteredInventory.filter(
-        (inv: any) => inv.quantity <= inv.product.lowStockThreshold
+        (inv: any) => Number(inv.quantity) <= Number(inv.product.lowStockThreshold)
       );
     }
 
@@ -49,11 +50,11 @@ export async function GET(request: Request) {
       product: inv.product.name,
       category: inv.product.category?.name || "Sin categoría",
       location: inv.location.name,
-      quantity: inv.quantity,
+      quantity: roundQuantity(Number(inv.quantity)),
       cost: Number(inv.product.cost || 0),
       price: Number(inv.product.price),
-      stockValue: Number(inv.product.cost || 0) * inv.quantity,
-      isLowStock: inv.quantity <= inv.product.lowStockThreshold,
+      stockValue: Number(inv.product.cost || 0) * Number(inv.quantity),
+      isLowStock: Number(inv.quantity) <= Number(inv.product.lowStockThreshold),
     }));
 
     // Calculate summary

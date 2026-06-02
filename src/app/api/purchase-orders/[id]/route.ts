@@ -15,7 +15,7 @@ const updateItemsSchema = z
   .array(
     z.object({
       productId: z.string().min(1),
-      quantity: z.number().int().positive(),
+      quantity: z.number().positive(),
       unitCost: z.number().positive(),
     })
   )
@@ -65,7 +65,7 @@ export async function GET(
         items: {
           include: {
             product: {
-              select: { id: true, name: true, productNumber: true, price: true },
+              select: { id: true, name: true, productNumber: true, price: true, unitOfMeasure: true, customUnitName: true },
             },
           },
         },
@@ -202,7 +202,7 @@ export async function PUT(
 
       for (const item of data.items) {
         const currentItem = currentItemsByProductId.get(item.productId)
-        const receivedQty = currentItem?.receivedQty || 0
+        const receivedQty = Number(currentItem?.receivedQty || 0)
 
         if (item.quantity < receivedQty) {
           return NextResponse.json(
@@ -224,9 +224,9 @@ export async function PUT(
       }
 
       const { subtotal, tax, total } = calculatePurchaseOrderTotals(data.items)
-      const nextItemsState = data.items.map((item) => ({
-        ...item,
-        receivedQty: currentItemsByProductId.get(item.productId)?.receivedQty || 0,
+        const nextItemsState = data.items.map((item) => ({
+          ...item,
+        receivedQty: Number(currentItemsByProductId.get(item.productId)?.receivedQty || 0),
       }))
 
       const nextStatus = derivePurchaseOrderStatus(
@@ -263,7 +263,7 @@ export async function PUT(
         items: {
           include: {
             product: {
-              select: { id: true, name: true, productNumber: true },
+              select: { id: true, name: true, productNumber: true, unitOfMeasure: true, customUnitName: true },
             },
           },
         },

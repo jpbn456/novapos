@@ -23,6 +23,7 @@ import { getCashSessions } from "@/app/actions/cash"
 import { getActivePromotions } from "@/app/actions/promotions"
 import { useCart, CartProvider } from "@/contexts/cart-context"
 import { calculatePromotionalPricing, type PromotionPricingInput } from "@/lib/pricing"
+import { formatQuantity, getQuantityStep, getUnitLabel, type UnitOfMeasureValue } from "@/lib/quantity"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -53,6 +54,8 @@ interface Product {
   name: string
   price: number
   barcode: string | null
+  unitOfMeasure: UnitOfMeasureValue
+  customUnitName: string | null
 }
 
 interface CashSessionOption {
@@ -254,7 +257,7 @@ function POSContent() {
               <TableBody>
                 {saleComplete.items.map((item: any) => (
                   <TableRow key={item.id}>
-                    <TableCell className="whitespace-normal">{item.product.name} x {item.quantity}</TableCell>
+                    <TableCell className="whitespace-normal">{item.product.name} x {formatQuantity(item.quantity)} {getUnitLabel(item.product.unitOfMeasure, item.product.customUnitName)}</TableCell>
                     <TableCell className="text-right font-medium">{formatCurrency(item.subtotal)}</TableCell>
                   </TableRow>
                 ))}
@@ -296,7 +299,7 @@ function POSContent() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="secondary" className="min-h-9 px-3">{getItemCount()} items en carrito</Badge>
+          <Badge variant="secondary" className="min-h-9 px-3">{formatQuantity(getItemCount())} en carrito</Badge>
           <Badge variant="info" className="min-h-9 max-w-full px-3 text-center">{currentLocation?.name || "Sin sucursal"}</Badge>
         </div>
       </div>
@@ -428,7 +431,7 @@ function POSContent() {
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0 space-y-1">
                             <p className="font-medium text-foreground">{item.name}</p>
-                            <p className="text-xs text-muted-foreground">{formatCurrency(item.price)} c/u</p>
+                            <p className="text-xs text-muted-foreground">{formatCurrency(item.price)} c/{getUnitLabel(item.unitOfMeasure, item.customUnitName)}</p>
                             {pricing.lines.find((line) => line.productId === item.productId)?.savings ? (
                               <p className="text-xs text-success-foreground">
                                 Ahorro: {formatCurrency(pricing.lines.find((line) => line.productId === item.productId)?.savings || 0)}
@@ -450,16 +453,23 @@ function POSContent() {
                               variant="outline"
                               size="icon"
                               className="h-10 w-10"
-                              onClick={() => updateQuantity(item.productId, item.quantity - 1)}
+                              onClick={() => updateQuantity(item.productId, item.quantity - getQuantityStep(item.unitOfMeasure))}
                             >
                               <Minus className="h-4 w-4" />
                             </Button>
-                            <span className="min-w-8 text-center text-sm font-medium">{item.quantity}</span>
+                            <Input
+                              type="number"
+                              min={String(getQuantityStep(item.unitOfMeasure))}
+                              step={String(getQuantityStep(item.unitOfMeasure))}
+                              className="h-10 w-24 text-center"
+                              value={item.quantity}
+                              onChange={(event) => updateQuantity(item.productId, Number(event.target.value) || 0)}
+                            />
                             <Button
                               variant="outline"
                               size="icon"
                               className="h-10 w-10"
-                              onClick={() => updateQuantity(item.productId, item.quantity + 1)}
+                              onClick={() => updateQuantity(item.productId, item.quantity + getQuantityStep(item.unitOfMeasure))}
                             >
                               <Plus className="h-4 w-4" />
                             </Button>
@@ -483,7 +493,7 @@ function POSContent() {
                             <TableCell className="whitespace-normal">
                               <div className="space-y-1">
                                 <p className="font-medium text-foreground">{item.name}</p>
-                                <p className="text-xs text-muted-foreground">{formatCurrency(item.price)} c/u</p>
+                                 <p className="text-xs text-muted-foreground">{formatCurrency(item.price)} c/{getUnitLabel(item.unitOfMeasure, item.customUnitName)}</p>
                                 {pricing.lines.find((line) => line.productId === item.productId)?.savings ? (
                                   <p className="text-xs text-success-foreground">
                                     Ahorro: {formatCurrency(pricing.lines.find((line) => line.productId === item.productId)?.savings || 0)}
@@ -496,15 +506,22 @@ function POSContent() {
                                 <Button
                                   variant="outline"
                                   size="icon-sm"
-                                  onClick={() => updateQuantity(item.productId, item.quantity - 1)}
+                                   onClick={() => updateQuantity(item.productId, item.quantity - getQuantityStep(item.unitOfMeasure))}
                                 >
                                   <Minus className="h-3 w-3" />
                                 </Button>
-                                <span className="w-8 text-center text-sm font-medium">{item.quantity}</span>
+                                 <Input
+                                   type="number"
+                                   min={String(getQuantityStep(item.unitOfMeasure))}
+                                   step={String(getQuantityStep(item.unitOfMeasure))}
+                                   className="h-8 w-24 text-center"
+                                   value={item.quantity}
+                                   onChange={(event) => updateQuantity(item.productId, Number(event.target.value) || 0)}
+                                 />
                                 <Button
                                   variant="outline"
                                   size="icon-sm"
-                                  onClick={() => updateQuantity(item.productId, item.quantity + 1)}
+                                   onClick={() => updateQuantity(item.productId, item.quantity + getQuantityStep(item.unitOfMeasure))}
                                 >
                                   <Plus className="h-3 w-3" />
                                 </Button>

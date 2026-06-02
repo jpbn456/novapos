@@ -4,6 +4,7 @@ import Link from "next/link"
 import { useEffect, useMemo, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { ArrowLeft, Loader2 } from "lucide-react"
+import { formatQuantity, getQuantityStep, getUnitLabel, type UnitOfMeasureValue } from "@/lib/quantity"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -13,6 +14,8 @@ type Product = {
   id: string
   productNumber: number
   name: string
+  unitOfMeasure: UnitOfMeasureValue
+  customUnitName: string | null
 }
 
 type PurchaseOrderItem = {
@@ -46,6 +49,8 @@ type EditableItem = {
   productId: string
   productName: string
   productNumber: number
+  unitOfMeasure: UnitOfMeasureValue
+  customUnitName: string | null
   quantity: number
   receivedQty: number
   unitCost: number
@@ -93,6 +98,7 @@ export default function PurchaseOrderDetailPage() {
 
   const canEdit = order ? !["RECEIVED", "CANCELLED"].includes(order.status) : false
   const canReceive = order ? ["CONFIRMED", "PARTIALLY_RECEIVED"].includes(order.status) : false
+  const selectedProductMeta = products.find((product) => product.id === selectedProductId)
 
   const totals = useMemo(() => {
     const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unitCost, 0)
@@ -127,6 +133,8 @@ export default function PurchaseOrderDetailPage() {
           productId: item.productId,
           productName: item.product.name,
           productNumber: item.product.productNumber,
+          unitOfMeasure: item.product.unitOfMeasure,
+          customUnitName: item.product.customUnitName,
           quantity: item.quantity,
           receivedQty: item.receivedQty,
           unitCost: item.unitCost,
@@ -172,6 +180,8 @@ export default function PurchaseOrderDetailPage() {
           productId: product.id,
           productName: product.name,
           productNumber: product.productNumber,
+          unitOfMeasure: product.unitOfMeasure,
+          customUnitName: product.customUnitName,
           quantity: selectedQuantity,
           receivedQty: 0,
           unitCost: selectedUnitCost,
@@ -356,11 +366,11 @@ export default function PurchaseOrderDetailPage() {
                       .filter((product) => !items.some((item) => item.productId === product.id))
                       .map((product) => (
                         <option key={product.id} value={product.id}>
-                          {product.name} (ID {product.productNumber})
+                          {product.name} (ID {product.productNumber}) · {getUnitLabel(product.unitOfMeasure, product.customUnitName)}
                         </option>
                       ))}
                   </select>
-                  <Input type="number" min="1" value={selectedQuantity} onChange={(event) => setSelectedQuantity(Number(event.target.value) || 1)} />
+                  <Input type="number" min={String(selectedProductMeta ? getQuantityStep(selectedProductMeta.unitOfMeasure) : 1)} step={String(selectedProductMeta ? getQuantityStep(selectedProductMeta.unitOfMeasure) : 1)} value={selectedQuantity} onChange={(event) => setSelectedQuantity(Number(event.target.value) || 1)} />
                   <Input type="number" min="0" step="0.01" value={selectedUnitCost || ""} onChange={(event) => setSelectedUnitCost(Number(event.target.value) || 0)} />
                   <Button type="button" variant="outline" onClick={addItem}>Agregar</Button>
                 </div>
@@ -387,28 +397,29 @@ export default function PurchaseOrderDetailPage() {
                         <tr key={item.productId} className="border-b align-top">
                           <td className="py-3">
                             <p className="font-medium">{item.productName}</p>
-                            <p className="text-xs text-muted-foreground">ID {item.productNumber}</p>
+                            <p className="text-xs text-muted-foreground">ID {item.productNumber} · {getUnitLabel(item.unitOfMeasure, item.customUnitName)}</p>
                           </td>
                           <td className="py-3">
                             <Input
                               type="number"
-                              min={item.receivedQty || 1}
+                              min={String(item.receivedQty || getQuantityStep(item.unitOfMeasure))}
+                              step={String(getQuantityStep(item.unitOfMeasure))}
                               value={item.quantity}
                               disabled={!canEdit}
                               onChange={(event) => {
-                                const nextQuantity = Number(event.target.value) || item.receivedQty || 1
+                                const nextQuantity = Number(event.target.value) || item.receivedQty || getQuantityStep(item.unitOfMeasure)
                                 setItems((current) =>
                                   current.map((entry) =>
                                     entry.productId === item.productId
-                                      ? { ...entry, quantity: Math.max(nextQuantity, entry.receivedQty || 1) }
+                                      ? { ...entry, quantity: Math.max(nextQuantity, entry.receivedQty || getQuantityStep(entry.unitOfMeasure)) }
                                       : entry
                                   )
                                 )
                               }}
                             />
                           </td>
-                          <td className="py-3 text-sm text-muted-foreground">{item.receivedQty}</td>
-                          <td className="py-3 text-sm text-muted-foreground">{pending}</td>
+                          <td className="py-3 text-sm text-muted-foreground">{formatQuantity(item.receivedQty)}</td>
+                          <td className="py-3 text-sm text-muted-foreground">{formatQuantity(pending)}</td>
                           <td className="py-3">
                             <Input
                               type="number"
@@ -457,13 +468,14 @@ export default function PurchaseOrderDetailPage() {
                     return (
                       <div key={item.id} className="grid gap-3 rounded-xl border border-border/70 p-4 md:grid-cols-[minmax(0,1fr)_140px] md:items-center">
                         <div>
-                          <p className="font-medium">{item.product.name}</p>
-                          <p className="text-sm text-muted-foreground">Recibido {item.receivedQty} de {item.quantity} · pendiente {pending}</p>
+                      <p className="font-medium">{item.product.name}</p>
+                          <p className="text-sm text-muted-foreground">Recibido {formatQuantity(item.receivedQty)} de {formatQuantity(item.quantity)} {getUnitLabel(item.product.unitOfMeasure, item.product.customUnitName)} · pendiente {formatQuantity(pending)}</p>
                         </div>
                         <Input
                           type="number"
                           min="0"
-                          max={pending}
+                          max={String(pending)}
+                          step={String(getQuantityStep(item.product.unitOfMeasure))}
                           value={receiveQuantities[item.id] || ""}
                           placeholder="0"
                           onChange={(event) =>

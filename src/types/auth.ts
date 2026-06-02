@@ -16,6 +16,8 @@ export interface CartItem {
   price: number
   quantity: number
   subtotal: number
+  unitOfMeasure?: 'UNIT' | 'ML' | 'G' | 'KG' | 'LT' | 'OTHER'
+  customUnitName?: string | null
   sku?: string | null
   barcode?: string | null
 }

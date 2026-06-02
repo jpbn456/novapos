@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react"
 import { createManualInventoryMovement, getInventoryMovements } from "@/app/actions/inventory"
 import { getLocations } from "@/app/actions/locations"
 import { getProducts } from "@/app/actions/products"
+import { formatQuantity, getQuantityStep, getUnitLabel, type UnitOfMeasureValue } from "@/lib/quantity"
 import { PageHeader } from "@/components/dashboard/page-primitives"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -20,6 +21,8 @@ type Product = {
   id: string
   productNumber: number
   name: string
+  unitOfMeasure: UnitOfMeasureValue
+  customUnitName: string | null
 }
 
 type InventoryMovement = {
@@ -34,7 +37,7 @@ type InventoryMovement = {
     id: string
     productNumber: number
     name: string
-    unitOfMeasure: string
+    unitOfMeasure: UnitOfMeasureValue
     customUnitName?: string | null
   }
   location: {
@@ -81,6 +84,8 @@ export default function InventoryMovementsPage() {
           id: product.id,
           productNumber: product.productNumber,
           name: product.name,
+          unitOfMeasure: product.unitOfMeasure,
+          customUnitName: product.customUnitName,
         })))
       }
     })
@@ -98,6 +103,8 @@ export default function InventoryMovementsPage() {
     ),
     [movements, search]
   )
+
+  const selectedProduct = products.find((product) => product.id === productId)
 
   async function handleSubmit() {
     if (!selectedLocationId) {
@@ -150,7 +157,7 @@ export default function InventoryMovementsPage() {
           <select value={productId} onChange={(event) => setProductId(event.target.value)} className="h-11 rounded-md border border-input bg-background px-3">
             <option value="">Seleccionar producto</option>
             {products.map((product) => (
-              <option key={product.id} value={product.id}>{product.name} (ID {product.productNumber})</option>
+              <option key={product.id} value={product.id}>{product.name} (ID {product.productNumber}) · {getUnitLabel(product.unitOfMeasure, product.customUnitName)}</option>
             ))}
           </select>
 
@@ -159,7 +166,7 @@ export default function InventoryMovementsPage() {
             <option value="MANUAL_OUT">Salida</option>
           </select>
 
-          <Input type="number" min="1" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
+          <Input type="number" min={String(selectedProduct ? getQuantityStep(selectedProduct.unitOfMeasure) : 1)} step={String(selectedProduct ? getQuantityStep(selectedProduct.unitOfMeasure) : 1)} value={quantity} onChange={(event) => setQuantity(event.target.value)} />
           <Input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Motivo del movimiento" />
           <Button onClick={handleSubmit} disabled={submitting || !productId || !notes.trim()}>
             {submitting ? "Guardando..." : "Registrar movimiento"}
@@ -200,14 +207,14 @@ export default function InventoryMovementsPage() {
                 </div>
                 <div className="text-right">
                   <p className={`font-semibold ${movement.quantityDelta >= 0 ? "text-success-foreground" : "text-destructive"}`}>
-                    {movement.quantityDelta >= 0 ? "+" : ""}{movement.quantityDelta}
+                    {movement.quantityDelta >= 0 ? "+" : ""}{formatQuantity(movement.quantityDelta)} {getUnitLabel(movement.product.unitOfMeasure, movement.product.customUnitName)}
                   </p>
                   <p className="text-muted-foreground">{formatDate(movement.createdAt)}</p>
                 </div>
               </div>
               <div className="mt-3 grid gap-2 text-muted-foreground md:grid-cols-3">
-                <p>Antes: {movement.quantityBefore}</p>
-                <p>Después: {movement.quantityAfter}</p>
+                <p>Antes: {formatQuantity(movement.quantityBefore)} {getUnitLabel(movement.product.unitOfMeasure, movement.product.customUnitName)}</p>
+                <p>Después: {formatQuantity(movement.quantityAfter)} {getUnitLabel(movement.product.unitOfMeasure, movement.product.customUnitName)}</p>
                 <p>Usuario: {movement.user?.name || movement.user?.email || "Sistema"}</p>
               </div>
               {movement.notes ? <p className="mt-3 text-muted-foreground">{movement.notes}</p> : null}

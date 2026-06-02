@@ -13,7 +13,7 @@ const receiveOrderSchema = z.object({
     .array(
       z.object({
         itemId: z.string().min(1),
-        quantityReceived: z.number().int().positive(),
+        quantityReceived: z.number().positive(),
       })
     )
     .min(1, 'Indicá al menos un item a recibir'),
@@ -79,7 +79,7 @@ export async function POST(
         items: {
           include: {
             product: {
-              select: { id: true, name: true, productNumber: true },
+              select: { id: true, name: true, productNumber: true, unitOfMeasure: true, customUnitName: true },
             },
           },
         },
@@ -113,7 +113,7 @@ export async function POST(
         )
       }
 
-      const pendingQty = currentItem.quantity - currentItem.receivedQty
+      const pendingQty = Number(currentItem.quantity) - Number(currentItem.receivedQty)
       if (receivedItem.quantityReceived > pendingQty) {
         return NextResponse.json(
           { error: `No podés recibir más de lo pendiente para ${currentItem.product.name}` },
@@ -131,7 +131,7 @@ export async function POST(
 
       for (const receivedItem of parsed.data.items) {
         const currentItem = itemsById.get(receivedItem.itemId)!
-        const nextReceivedQty = currentItem.receivedQty + receivedItem.quantityReceived
+        const nextReceivedQty = Number(currentItem.receivedQty) + receivedItem.quantityReceived
 
         await txDb.purchaseOrderItem.update({
           where: { id: currentItem.id },
@@ -142,7 +142,7 @@ export async function POST(
 
         const nextItemState = nextItemsState.find((item) => item.id === currentItem.id)
         if (nextItemState) {
-          nextItemState.receivedQty = nextReceivedQty
+          nextItemState.receivedQty = Number(nextReceivedQty)
         }
 
         await applyInventoryMovement(txDb, {
@@ -170,7 +170,7 @@ export async function POST(
           items: {
             include: {
               product: {
-                select: { id: true, name: true, productNumber: true },
+                select: { id: true, name: true, productNumber: true, unitOfMeasure: true, customUnitName: true },
               },
             },
           },

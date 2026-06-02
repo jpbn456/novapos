@@ -2,13 +2,16 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import { formatQuantity, getQuantityStep, getUnitLabel, type UnitOfMeasureValue } from "@/lib/quantity"
 
 interface Supplier { id: string; name: string }
 interface Location { id: string; name: string }
-interface Product { id: string; name: string; productNumber: number }
+interface Product { id: string; name: string; productNumber: number; unitOfMeasure: UnitOfMeasureValue; customUnitName: string | null }
 interface OrderItem {
   productId: string
   productName: string
+  unitOfMeasure: UnitOfMeasureValue
+  customUnitName: string | null
   quantity: number
   unitCost: number
   subtotal: number
@@ -58,7 +61,7 @@ export default function NewPurchaseOrderPage() {
       updatedItems[existingIndex].subtotal = updatedItems[existingIndex].quantity * updatedItems[existingIndex].unitCost
       setItems(updatedItems)
     } else {
-      setItems([...items, { productId: selectedProduct, productName: product.name, quantity, unitCost, subtotal: quantity * unitCost }])
+      setItems([...items, { productId: selectedProduct, productName: product.name, unitOfMeasure: product.unitOfMeasure, customUnitName: product.customUnitName, quantity, unitCost, subtotal: quantity * unitCost }])
     }
     setSelectedProduct("")
     setQuantity(1)
@@ -68,6 +71,8 @@ export default function NewPurchaseOrderPage() {
   function removeItem(productId: string) {
     setItems(items.filter((item) => item.productId !== productId))
   }
+
+  const selectedProductMeta = products.find((product) => product.id === selectedProduct)
 
   const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0)
   const tax = subtotal * 0.21
@@ -164,17 +169,18 @@ export default function NewPurchaseOrderPage() {
                   onChange={(e) => setSelectedProduct(e.target.value)}
                 >
                   <option value="">Seleccionar producto</option>
-                  {products.map((p) => <option key={p.id} value={p.id}>{p.name} (ID {p.productNumber})</option>)}
+                  {products.map((p) => <option key={p.id} value={p.id}>{p.name} (ID {p.productNumber}) · {getUnitLabel(p.unitOfMeasure, p.customUnitName)}</option>)}
                 </select>
               </div>
               <div className="w-24 space-y-2">
-                <label className="text-sm font-medium">Cantidad</label>
+                <label className="text-sm font-medium">Cantidad {selectedProductMeta ? `(${getUnitLabel(selectedProductMeta.unitOfMeasure, selectedProductMeta.customUnitName)})` : ""}</label>
                 <input
                   type="number"
-                  min="1"
+                  min={String(selectedProductMeta ? getQuantityStep(selectedProductMeta.unitOfMeasure) : 1)}
+                  step={String(selectedProductMeta ? getQuantityStep(selectedProductMeta.unitOfMeasure) : 1)}
                   className="w-full h-10 px-3 rounded-md border border-input bg-background"
                   value={quantity}
-                  onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
+                  onChange={(e) => setQuantity(parseFloat(e.target.value) || 1)}
                 />
               </div>
               <div className="w-32 space-y-2">
@@ -213,15 +219,16 @@ export default function NewPurchaseOrderPage() {
                 <tbody>
                   {items.map((item) => (
                     <tr key={item.productId} className="border-b">
-                      <td className="py-2">{item.productName}</td>
+                      <td className="py-2">{item.productName} <span className="text-xs text-muted-foreground">({getUnitLabel(item.unitOfMeasure, item.customUnitName)})</span></td>
                       <td className="py-2">
                         <input
                           type="number"
-                          min="1"
+                          min={String(getQuantityStep(item.unitOfMeasure))}
+                          step={String(getQuantityStep(item.unitOfMeasure))}
                           className="w-full h-8 px-2 rounded border"
                           value={item.quantity}
                           onChange={(e) => {
-                            const qty = parseInt(e.target.value) || 1
+                            const qty = parseFloat(e.target.value) || getQuantityStep(item.unitOfMeasure)
                             setItems(items.map(i => i.productId === item.productId ? { ...i, quantity: qty, subtotal: qty * i.unitCost } : i))
                           }}
                         />
@@ -239,7 +246,7 @@ export default function NewPurchaseOrderPage() {
                           }}
                         />
                       </td>
-                      <td className="py-2">${item.subtotal.toFixed(2)}</td>
+                      <td className="py-2">${item.subtotal.toFixed(2)} <span className="block text-xs text-muted-foreground">{formatQuantity(item.quantity)}</span></td>
                       <td className="py-2">
                         <button onClick={() => removeItem(item.productId)} className="text-destructive hover:underline">X</button>
                       </td>

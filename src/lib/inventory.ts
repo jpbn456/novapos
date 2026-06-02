@@ -1,3 +1,5 @@
+import { roundQuantity } from "@/lib/quantity"
+
 type InventoryMovementTypeValue =
   | "INITIAL"
   | "SALE"
@@ -34,7 +36,9 @@ export async function applyInventoryMovement(
   })
 
   const quantityBefore = existingInventory?.quantity ?? 0
-  const quantityAfter = quantityBefore + input.quantityDelta
+  const normalizedQuantityBefore = roundQuantity(Number(quantityBefore))
+  const normalizedQuantityDelta = roundQuantity(input.quantityDelta)
+  const quantityAfter = roundQuantity(normalizedQuantityBefore + normalizedQuantityDelta)
 
   if (quantityAfter < 0) {
     throw new Error("Stock insuficiente para el producto")
@@ -64,15 +68,15 @@ export async function applyInventoryMovement(
       purchaseOrderId: input.purchaseOrderId ?? null,
       transferId: input.transferId ?? null,
       type: input.type,
-      quantityDelta: input.quantityDelta,
-      quantityBefore,
+      quantityDelta: normalizedQuantityDelta,
+      quantityBefore: normalizedQuantityBefore,
       quantityAfter,
       notes: input.notes ?? null,
     },
   })
 
   return {
-    quantityBefore,
+    quantityBefore: normalizedQuantityBefore,
     quantityAfter,
   }
 }

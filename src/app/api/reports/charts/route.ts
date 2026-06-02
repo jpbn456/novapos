@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { format, eachDayOfInterval, parseISO } from "date-fns";
+import { roundQuantity } from "@/lib/quantity";
 
 export async function GET(request: Request) {
   try {
@@ -62,7 +63,7 @@ export async function GET(request: Request) {
             revenue: 0,
           };
         }
-        productSales[item.productId].sold += item.quantity;
+        productSales[item.productId].sold += Number(item.quantity);
         productSales[item.productId].revenue += Number(item.subtotal);
       }
     }
@@ -71,7 +72,7 @@ export async function GET(request: Request) {
       .map(([productId, data]) => ({
         productId,
         productName: data.name,
-        totalSold: data.sold,
+        totalSold: roundQuantity(data.sold),
         revenue: data.revenue,
       }))
       .sort((a, b) => b.revenue - a.revenue)
