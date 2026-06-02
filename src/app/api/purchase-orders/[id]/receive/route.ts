@@ -126,7 +126,8 @@ export async function POST(
       const txDb = tx as any
       const nextItemsState = order.items.map((item) => ({
         ...item,
-        receivedQty: item.receivedQty,
+        quantity: Number(item.quantity),
+        receivedQty: Number(item.receivedQty),
       }))
 
       for (const receivedItem of parsed.data.items) {
