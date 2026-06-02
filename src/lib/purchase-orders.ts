@@ -8,13 +8,13 @@ export type PurchaseOrderStatusValue =
   | "CANCELLED"
 
 type PurchaseOrderItemLike = {
-  quantity: number
-  receivedQty: number
-  unitCost: number
+  quantity: unknown
+  receivedQty: unknown
+  unitCost: unknown
 }
 
 export function calculatePurchaseOrderTotals(items: Array<Pick<PurchaseOrderItemLike, "quantity" | "unitCost">>) {
-  const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unitCost, 0)
+  const subtotal = items.reduce((sum, item) => sum + toNumber(item.quantity) * toNumber(item.unitCost), 0)
   const tax = subtotal * 0.21
   const total = subtotal + tax
 
