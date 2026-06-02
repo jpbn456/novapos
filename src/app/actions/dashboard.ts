@@ -78,7 +78,7 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
 
   const productMap = new Map(products.map((p: { id: string; name: string }) => [p.id, p.name]))
 
-  const topProductsWithNames = topProducts.map((p: { productId: string; _sum: { quantity: number | null } }) => ({
+  const topProductsWithNames = topProducts.map((p) => ({
     name: productMap.get(p.productId) || "Unknown",
     totalSold: Number(p._sum.quantity || 0),
   }))
