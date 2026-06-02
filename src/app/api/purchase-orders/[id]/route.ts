@@ -215,7 +215,7 @@ export async function PUT(
       for (const currentItem of currentOrder.items) {
         const stillPresent = data.items.some((item) => item.productId === currentItem.productId)
 
-        if (!stillPresent && currentItem.receivedQty > 0) {
+        if (!stillPresent && Number(currentItem.receivedQty) > 0) {
           return NextResponse.json(
             { error: 'No podés eliminar un producto que ya recibió stock' },
             { status: 400 }
