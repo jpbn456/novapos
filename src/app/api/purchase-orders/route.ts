@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
 import { resolveSessionUserId } from '@/lib/auth/session-user'
+import { calculatePurchaseOrderTotals, serializePurchaseOrder } from '@/lib/purchase-orders'
 import { z } from 'zod'
+
+const MANAGER_ROLES = new Set(['ADMIN', 'MANAGER'])
 
 const createOrderSchema = z.object({
   supplierId: z.string().min(1, 'Supplier is required'),
@@ -18,16 +21,17 @@ const createOrderSchema = z.object({
   ).min(1, 'At least one item is required'),
 })
 
-const updateOrderSchema = z.object({
-  supplierId: z.string().optional(),
-  locationId: z.string().optional(),
-  status: z.enum(['PENDING', 'CONFIRMED', 'RECEIVED', 'CANCELLED']).optional(),
-  expectedDate: z.string().optional(),
-  notes: z.string().optional(),
-})
-
 export async function GET(request: NextRequest) {
   try {
+    const session = await auth()
+    if (!session?.user) {
+      return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
+    }
+
+    if (!MANAGER_ROLES.has(session.user.role || '')) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 403 })
+    }
+
     const { searchParams } = new URL(request.url)
     const supplierId = searchParams.get('supplierId')
     const locationId = searchParams.get('locationId')
@@ -58,7 +62,7 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: 'desc' },
     })
 
-    return NextResponse.json(orders)
+    return NextResponse.json(orders.map((order) => serializePurchaseOrder(order)))
   } catch (error) {
     console.error('Error fetching purchase orders:', error)
     return NextResponse.json(
@@ -75,6 +79,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
 
+    if (!MANAGER_ROLES.has(session.user.role || '')) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 403 })
+    }
+
     const userId = await resolveSessionUserId(session)
     if (!userId) {
       return NextResponse.json({ error: 'Sesión inválida. Volvé a iniciar sesión.' }, { status: 401 })
@@ -83,13 +91,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const validatedData = createOrderSchema.parse(body)
 
-    // Calculate totals
-    const subtotal = validatedData.items.reduce(
-      (sum, item) => sum + item.quantity * item.unitCost,
-      0
-    )
-    const tax = subtotal * 0.21 // 21% tax
-    const total = subtotal + tax
+    const { subtotal, tax, total } = calculatePurchaseOrderTotals(validatedData.items)
 
     // Generate order number
     const orderNumber = `PO-${Date.now()}-${Math.random().toString(36).substring(7).toUpperCase()}`
@@ -129,7 +131,7 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json(order, { status: 201 })
+    return NextResponse.json(serializePurchaseOrder(order), { status: 201 })
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(

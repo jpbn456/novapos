@@ -42,6 +42,7 @@ interface PurchaseOrder {
 const statusConfig: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline"; icon: any }> = {
   PENDING: { label: "Pendiente", variant: "secondary", icon: Clock },
   CONFIRMED: { label: "Confirmado", variant: "default", icon: Truck },
+  PARTIALLY_RECEIVED: { label: "Recepción parcial", variant: "secondary", icon: Truck },
   RECEIVED: { label: "Recibido", variant: "outline", icon: CheckCircle },
   CANCELLED: { label: "Cancelado", variant: "destructive", icon: XCircle },
 }
@@ -141,6 +142,7 @@ export default function PurchaseOrdersPage() {
             <SelectItem value="all">Todos los estados</SelectItem>
             <SelectItem value="PENDING">Pendiente</SelectItem>
             <SelectItem value="CONFIRMED">Confirmado</SelectItem>
+            <SelectItem value="PARTIALLY_RECEIVED">Recepción parcial</SelectItem>
             <SelectItem value="RECEIVED">Recibido</SelectItem>
             <SelectItem value="CANCELLED">Cancelado</SelectItem>
           </SelectContent>
@@ -201,9 +203,11 @@ export default function PurchaseOrdersPage() {
                       <TableCell>{formatDate(order.expectedDate)}</TableCell>
                       <TableCell>{formatDate(order.createdAt)}</TableCell>
                       <TableCell className="text-right">
-                        <Button variant="outline" size="sm" disabled title="Vista detalle pendiente">
-                          <Eye className="h-4 w-4" />
-                        </Button>
+                        <Link href={`/purchase-orders/${order.id}`}>
+                          <Button variant="outline" size="sm" title="Ver y gestionar orden">
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                        </Link>
                       </TableCell>
                     </TableRow>
                   )

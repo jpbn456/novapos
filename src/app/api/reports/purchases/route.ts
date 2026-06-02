@@ -81,7 +81,7 @@ export async function GET(request: Request) {
       totalOrders: new Set(reportRows.map(r => r.orderNumber)).size,
       totalItems: reportRows.reduce((sum, row) => sum + row.quantity, 0),
       totalValue: reportRows.reduce((sum, row) => sum + row.subtotal, 0),
-      pendingCount: reportRows.filter(r => r.status === "PENDING").length,
+      pendingCount: reportRows.filter(r => ["PENDING", "CONFIRMED", "PARTIALLY_RECEIVED"].includes(r.status)).length,
       receivedCount: reportRows.filter(r => r.status === "RECEIVED").length,
     };
 

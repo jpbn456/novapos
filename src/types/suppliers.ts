@@ -32,7 +32,7 @@ export interface SupplierUpdateInput {
 }
 
 // Purchase Order types
-export type PurchaseOrderStatus = 'PENDING' | 'CONFIRMED' | 'RECEIVED' | 'CANCELLED'
+export type PurchaseOrderStatus = 'PENDING' | 'CONFIRMED' | 'PARTIALLY_RECEIVED' | 'RECEIVED' | 'CANCELLED'
 
 export interface PurchaseOrder {
   id: string

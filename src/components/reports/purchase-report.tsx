@@ -34,7 +34,7 @@ export default function PurchaseReport({ dateRange }: PurchaseReportProps) {
   function getStatusVariant(status: string) {
     if (status === "RECEIVED") return "default"
     if (status === "PENDING") return "outline"
-    if (status === "SENT") return "secondary"
+    if (status === "CONFIRMED" || status === "PARTIALLY_RECEIVED") return "secondary"
     return "destructive"
   }
 

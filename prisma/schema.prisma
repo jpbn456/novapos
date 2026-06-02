@@ -533,6 +533,7 @@ enum PromotionType {
 enum PurchaseOrderStatus {
   PENDING
   CONFIRMED
+  PARTIALLY_RECEIVED
   RECEIVED
   CANCELLED
 }

@@ -2,9 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react"
 
-import { getInventoryMovements } from "@/app/actions/inventory"
+import { createManualInventoryMovement, getInventoryMovements } from "@/app/actions/inventory"
 import { getLocations } from "@/app/actions/locations"
+import { getProducts } from "@/app/actions/products"
 import { PageHeader } from "@/components/dashboard/page-primitives"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 
@@ -12,6 +14,12 @@ type Location = {
   id: string
   name: string
   isActive: boolean
+}
+
+type Product = {
+  id: string
+  productNumber: number
+  name: string
 }
 
 type InventoryMovement = {
@@ -45,24 +53,41 @@ function formatDate(value: string | Date) {
 
 export default function InventoryMovementsPage() {
   const [locations, setLocations] = useState<Location[]>([])
+  const [products, setProducts] = useState<Product[]>([])
   const [selectedLocationId, setSelectedLocationId] = useState("")
   const [movements, setMovements] = useState<InventoryMovement[]>([])
   const [search, setSearch] = useState("")
+  const [movementType, setMovementType] = useState<"MANUAL_IN" | "MANUAL_OUT">("MANUAL_IN")
+  const [productId, setProductId] = useState("")
+  const [quantity, setQuantity] = useState("1")
+  const [notes, setNotes] = useState("")
+  const [submitting, setSubmitting] = useState(false)
+
+  async function loadMovements(locationId?: string) {
+    const result = await getInventoryMovements(locationId || undefined)
+    setMovements(result as InventoryMovement[])
+  }
 
   useEffect(() => {
-    getLocations().then((result) => {
-      if (result.success && result.data) {
-        const activeLocations = (result.data as Location[]).filter((location) => location.isActive)
+    Promise.all([getLocations(), getProducts(1, 200)]).then(([locationsResult, productsResult]) => {
+      if (locationsResult.success && locationsResult.data) {
+        const activeLocations = (locationsResult.data as Location[]).filter((location) => location.isActive)
         setLocations(activeLocations)
         setSelectedLocationId(activeLocations[0]?.id || "")
+      }
+
+      if (productsResult.success && productsResult.data) {
+        setProducts(productsResult.data.products.map((product) => ({
+          id: product.id,
+          productNumber: product.productNumber,
+          name: product.name,
+        })))
       }
     })
   }, [])
 
   useEffect(() => {
-    getInventoryMovements(selectedLocationId || undefined).then((result) => {
-      setMovements(result as InventoryMovement[])
-    })
+    loadMovements(selectedLocationId || undefined)
   }, [selectedLocationId])
 
   const filteredMovements = useMemo(
@@ -74,12 +99,73 @@ export default function InventoryMovementsPage() {
     [movements, search]
   )
 
+  async function handleSubmit() {
+    if (!selectedLocationId) {
+      alert("Seleccioná una sucursal para registrar el movimiento")
+      return
+    }
+
+    setSubmitting(true)
+    const result = await createManualInventoryMovement({
+      productId,
+      locationId: selectedLocationId,
+      type: movementType,
+      quantity: Number(quantity),
+      notes,
+    })
+
+    if (!result.success) {
+      alert(result.error || "No se pudo registrar el movimiento")
+      setSubmitting(false)
+      return
+    }
+
+    setProductId("")
+    setQuantity("1")
+    setNotes("")
+    await loadMovements(selectedLocationId)
+    setSubmitting(false)
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Entradas y salidas"
-        description="Ledger operativo de inventario con stock inicial, ventas, compras y ajustes registrados por movimiento."
+        description="Ledger operativo de inventario con stock inicial, ventas, compras y movimientos manuales auditados."
       />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Registrar movimiento manual</CardTitle>
+          <CardDescription>Usá este formulario para ingresar o sacar stock con motivo obligatorio.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 lg:grid-cols-[220px_220px_140px_140px_minmax(0,1fr)_160px]">
+          <select value={selectedLocationId} onChange={(event) => setSelectedLocationId(event.target.value)} className="h-11 rounded-md border border-input bg-background px-3">
+            <option value="">Seleccionar sucursal</option>
+            {locations.map((location) => (
+              <option key={location.id} value={location.id}>{location.name}</option>
+            ))}
+          </select>
+
+          <select value={productId} onChange={(event) => setProductId(event.target.value)} className="h-11 rounded-md border border-input bg-background px-3">
+            <option value="">Seleccionar producto</option>
+            {products.map((product) => (
+              <option key={product.id} value={product.id}>{product.name} (ID {product.productNumber})</option>
+            ))}
+          </select>
+
+          <select value={movementType} onChange={(event) => setMovementType(event.target.value as "MANUAL_IN" | "MANUAL_OUT")} className="h-11 rounded-md border border-input bg-background px-3">
+            <option value="MANUAL_IN">Entrada</option>
+            <option value="MANUAL_OUT">Salida</option>
+          </select>
+
+          <Input type="number" min="1" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
+          <Input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Motivo del movimiento" />
+          <Button onClick={handleSubmit} disabled={submitting || !productId || !notes.trim()}>
+            {submitting ? "Guardando..." : "Registrar movimiento"}
+          </Button>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -119,7 +205,7 @@ export default function InventoryMovementsPage() {
                   <p className="text-muted-foreground">{formatDate(movement.createdAt)}</p>
                 </div>
               </div>
-              <div className="mt-3 grid gap-2 md:grid-cols-3 text-muted-foreground">
+              <div className="mt-3 grid gap-2 text-muted-foreground md:grid-cols-3">
                 <p>Antes: {movement.quantityBefore}</p>
                 <p>Después: {movement.quantityAfter}</p>
                 <p>Usuario: {movement.user?.name || movement.user?.email || "Sistema"}</p>
