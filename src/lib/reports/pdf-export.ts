@@ -1,5 +1,3 @@
-import jsPDF from "jspdf"
-import autoTable from "jspdf-autotable"
 import type { SalesReportGroup, PurchaseReportGroup } from "@/lib/types/reports"
 
 function formatCurrency(value: number) {
@@ -11,7 +9,9 @@ function formatCurrency(value: number) {
   }).format(value)
 }
 
-export function exportSalesPDF(data: SalesReportGroup[], title: string) {
+export async function exportSalesPDF(data: SalesReportGroup[], title: string) {
+  const jsPDF = (await import("jspdf")).default
+  const autoTable = (await import("jspdf-autotable")).default
   const doc = new jsPDF({ unit: "mm", format: "a4" })
 
   doc.setFontSize(16)
@@ -63,7 +63,9 @@ export function exportSalesPDF(data: SalesReportGroup[], title: string) {
   doc.save(`${title.replace(/\s+/g, "-").toLowerCase()}.pdf`)
 }
 
-export function exportPurchasesPDF(data: PurchaseReportGroup[], title: string) {
+export async function exportPurchasesPDF(data: PurchaseReportGroup[], title: string) {
+  const jsPDF = (await import("jspdf")).default
+  const autoTable = (await import("jspdf-autotable")).default
   const doc = new jsPDF({ unit: "mm", format: "a4" })
 
   doc.setFontSize(16)
