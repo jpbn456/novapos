@@ -10,8 +10,10 @@ function formatCurrency(value: number) {
 }
 
 export async function exportSalesPDF(data: SalesReportGroup[], title: string) {
-  const jsPDF = (await import("jspdf")).default
-  const autoTable = (await import("jspdf-autotable")).default
+  const [{ default: jsPDF }, autoTable] = await Promise.all([
+    import("jspdf/dist/jspdf.es.min.js"),
+    import("jspdf-autotable").then((m) => m.default),
+  ])
   const doc = new jsPDF({ unit: "mm", format: "a4" })
 
   doc.setFontSize(16)
@@ -64,8 +66,10 @@ export async function exportSalesPDF(data: SalesReportGroup[], title: string) {
 }
 
 export async function exportPurchasesPDF(data: PurchaseReportGroup[], title: string) {
-  const jsPDF = (await import("jspdf")).default
-  const autoTable = (await import("jspdf-autotable")).default
+  const [{ default: jsPDF }, autoTable] = await Promise.all([
+    import("jspdf/dist/jspdf.es.min.js"),
+    import("jspdf-autotable").then((m) => m.default),
+  ])
   const doc = new jsPDF({ unit: "mm", format: "a4" })
 
   doc.setFontSize(16)
