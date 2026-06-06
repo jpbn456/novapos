@@ -1,7 +1,11 @@
-import { DollarSign, Package, Receipt, Wallet } from "lucide-react"
+"use client"
+
+import { useState } from "react"
+import { ChevronDown, ChevronRight, DollarSign, FileDown, Package, Receipt, Wallet } from "lucide-react"
 
 import { StatCard } from "@/components/dashboard/page-primitives"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import {
   Table,
   TableBody,
@@ -10,10 +14,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import type { SalesReportRow, SalesReportSummary } from "@/lib/types/reports"
+import type { SalesReportGroup, SalesReportSummary } from "@/lib/types/reports"
+import { exportSalesPDF } from "@/lib/reports/pdf-export"
 
 interface SalesReportProps {
-  data: SalesReportRow[]
+  data: SalesReportGroup[]
   summary: SalesReportSummary | null
 }
 
@@ -39,14 +44,34 @@ function getStatusVariant(status: string) {
 }
 
 export default function SalesReport({ data, summary }: SalesReportProps) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+
+  function toggleGroup(invoiceNumber: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(invoiceNumber)) {
+        next.delete(invoiceNumber)
+      } else {
+        next.add(invoiceNumber)
+      }
+      return next
+    })
+  }
+
   return (
     <div className="space-y-6">
       {summary ? (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <StatCard label="Ventas" value={formatCurrency(summary.totalSales)} helper={`${summary.salesCount} transacciones`} icon={DollarSign} iconClassName="text-primary" />
-          <StatCard label="Artículos" value={summary.totalItems} helper="Unidades vendidas" icon={Package} iconClassName="text-secondary-foreground" />
-          <StatCard label="Impuestos" value={formatCurrency(summary.totalTax)} helper="Carga fiscal del período" icon={Receipt} iconClassName="text-warning" />
-          <StatCard label="Ticket promedio" value={formatCurrency(summary.averageTicket)} helper="Valor medio por venta" icon={Wallet} iconClassName="text-success-foreground" />
+        <div className="flex items-start justify-between gap-4">
+          <div className="grid flex-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <StatCard label="Ventas" value={formatCurrency(summary.totalSales)} helper={`${summary.salesCount} transacciones`} icon={DollarSign} iconClassName="text-primary" />
+            <StatCard label="Artículos" value={summary.totalItems} helper="Unidades vendidas" icon={Package} iconClassName="text-secondary-foreground" />
+            <StatCard label="Impuestos" value={formatCurrency(summary.totalTax)} helper="Carga fiscal del período" icon={Receipt} iconClassName="text-warning" />
+            <StatCard label="Ticket promedio" value={formatCurrency(summary.averageTicket)} helper="Valor medio por venta" icon={Wallet} iconClassName="text-success-foreground" />
+          </div>
+          <Button variant="outline" size="sm" className="mt-1 shrink-0" onClick={() => exportSalesPDF(data, `Reporte-Ventas`)}>
+            <FileDown className="mr-2 h-4 w-4" />
+            PDF
+          </Button>
         </div>
       ) : null}
 
@@ -54,11 +79,11 @@ export default function SalesReport({ data, summary }: SalesReportProps) {
         <Table className="min-w-[720px]">
           <TableHeader>
             <TableRow>
+              <TableHead className="w-10"></TableHead>
+              <TableHead>Factura</TableHead>
               <TableHead>Fecha</TableHead>
-              <TableHead className="hidden md:table-cell">Factura</TableHead>
-              <TableHead className="hidden lg:table-cell">Sucursal</TableHead>
-              <TableHead>Producto</TableHead>
-              <TableHead className="text-right">Cant.</TableHead>
+              <TableHead className="hidden md:table-cell">Sucursal</TableHead>
+              <TableHead className="text-right">Items</TableHead>
               <TableHead className="text-right">Total</TableHead>
               <TableHead className="hidden sm:table-cell">Método</TableHead>
               <TableHead>Estado</TableHead>
@@ -72,21 +97,63 @@ export default function SalesReport({ data, summary }: SalesReportProps) {
                 </TableCell>
               </TableRow>
             ) : (
-              data.slice(0, 50).map((row) => (
-                <TableRow key={row.id}>
-                  <TableCell>{row.date}</TableCell>
-                  <TableCell className="hidden font-mono text-xs md:table-cell">{row.invoiceNumber.slice(0, 8)}</TableCell>
-                  <TableCell className="hidden lg:table-cell">{row.location}</TableCell>
-                  <TableCell className="whitespace-normal">{row.product}</TableCell>
-                  <TableCell className="text-right">{row.quantity}</TableCell>
-                  <TableCell className="text-right font-medium">{formatCurrency(row.total)}</TableCell>
-                  <TableCell className="hidden sm:table-cell">
-                    <Badge variant={getPaymentVariant(row.paymentMethod)}>{row.paymentMethod}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={getStatusVariant(row.status)}>{row.status}</Badge>
-                  </TableCell>
-                </TableRow>
+              data.map((group) => (
+                <>
+                  <TableRow
+                    key={group.invoiceNumber}
+                    className="cursor-pointer bg-muted/20 hover:bg-muted/40"
+                    onClick={() => toggleGroup(group.invoiceNumber)}
+                  >
+                    <TableCell>
+                      <Button variant="ghost" size="icon" className="h-6 w-6">
+                        {expanded.has(group.invoiceNumber) ? (
+                          <ChevronDown className="h-4 w-4" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </TableCell>
+                    <TableCell className="font-mono text-xs font-medium">{group.invoiceNumber.slice(0, 8)}</TableCell>
+                    <TableCell>{group.date}</TableCell>
+                    <TableCell className="hidden md:table-cell">{group.location}</TableCell>
+                    <TableCell className="text-right">{group.items.length}</TableCell>
+                    <TableCell className="text-right font-medium">{formatCurrency(group.total)}</TableCell>
+                    <TableCell className="hidden sm:table-cell">
+                      <Badge variant={getPaymentVariant(group.paymentMethod)}>{group.paymentMethod}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={getStatusVariant(group.status)}>{group.status}</Badge>
+                    </TableCell>
+                  </TableRow>
+                  {expanded.has(group.invoiceNumber) && (
+                    <TableRow key={`${group.invoiceNumber}-items`}>
+                      <TableCell colSpan={8} className="bg-muted/10 p-0">
+                        <div className="px-10 py-3">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Producto</TableHead>
+                                <TableHead className="text-right w-20">Cant.</TableHead>
+                                <TableHead className="text-right w-28">Precio</TableHead>
+                                <TableHead className="text-right w-28">Subtotal</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {group.items.map((item) => (
+                                <TableRow key={item.id}>
+                                  <TableCell className="whitespace-normal">{item.product}</TableCell>
+                                  <TableCell className="text-right">{item.quantity}</TableCell>
+                                  <TableCell className="text-right">{formatCurrency(item.unitPrice)}</TableCell>
+                                  <TableCell className="text-right font-medium">{formatCurrency(item.subtotal)}</TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </>
               ))
             )}
           </TableBody>

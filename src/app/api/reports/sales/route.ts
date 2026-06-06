@@ -64,73 +64,50 @@ export async function GET(request: Request) {
       orderBy: { createdAt: "desc" },
     });
 
-    // Transform to flat report rows (one per item)
-    let reportRows: any[] = [];
-    
+    // Group items by sale (invoice)
+    const groups: any[] = [];
+
     for (const sale of sales) {
-      if (productId) {
-        // Filter items by product
-        const filteredItems = sale.items.filter((item) => item.productId === productId);
-        for (const item of filteredItems) {
-          reportRows.push({
-            id: item.id,
-            invoiceNumber: sale.invoiceNumber,
-            date: format(sale.createdAt, "yyyy-MM-dd"),
-            location: sale.location.name,
-            cashier: sale.user.name || "N/A",
-            product: item.product.name,
-            quantity: roundQuantity(Number(item.quantity)),
-            unitPrice: Number(item.unitPrice),
-            subtotal: Number(item.subtotal),
-            tax: Number(sale.tax),
-            total: Number(sale.total),
-            paymentMethod: sale.paymentMethod,
-            status: sale.status,
-          });
-        }
-      } else {
-        // Include all items
-        for (const item of sale.items) {
-          reportRows.push({
-            id: item.id,
-            invoiceNumber: sale.invoiceNumber,
-            date: format(sale.createdAt, "yyyy-MM-dd"),
-            location: sale.location.name,
-            cashier: sale.user.name || "N/A",
-            product: item.product.name,
-            quantity: roundQuantity(Number(item.quantity)),
-            unitPrice: Number(item.unitPrice),
-            subtotal: Number(item.subtotal),
-            tax: Number(sale.tax),
-            total: Number(sale.total),
-            paymentMethod: sale.paymentMethod,
-            status: sale.status,
-          });
-        }
-      }
+      const items = sale.items
+        .filter((item) => !productId || item.productId === productId)
+        .map((item) => ({
+          id: item.id,
+          product: item.product.name,
+          quantity: roundQuantity(Number(item.quantity)),
+          unitPrice: Number(item.unitPrice),
+          subtotal: Number(item.subtotal),
+        }));
+
+      if (items.length === 0) continue;
+
+      groups.push({
+        invoiceNumber: sale.invoiceNumber,
+        date: format(sale.createdAt, "yyyy-MM-dd"),
+        location: sale.location.name,
+        cashier: sale.user.name || "N/A",
+        paymentMethod: sale.paymentMethod,
+        status: sale.status,
+        tax: Number(sale.tax),
+        total: Number(sale.total),
+        items,
+      });
     }
 
     // Calculate summary (per unique sale, not per item row)
-    const uniqueSales = new Map<string, { total: number; tax: number }>()
-    for (const row of reportRows) {
-      if (!uniqueSales.has(row.invoiceNumber)) {
-        uniqueSales.set(row.invoiceNumber, { total: row.total, tax: row.tax })
-      }
-    }
-    const saleTotals = Array.from(uniqueSales.values())
-    const totalSales = saleTotals.reduce((sum, s) => sum + s.total, 0)
-    const totalTax = saleTotals.reduce((sum, s) => sum + s.tax, 0)
-    const salesCount = uniqueSales.size
+    const totalSales = groups.reduce((sum, g) => sum + g.total, 0);
+    const totalTax = groups.reduce((sum, g) => sum + g.tax, 0);
+    const totalItems = groups.reduce((sum, g) => sum + g.items.reduce((is: number, i: any) => is + i.quantity, 0), 0);
+    const salesCount = groups.length;
 
     const summary = {
       totalSales,
-      totalItems: reportRows.reduce((sum, row) => sum + row.quantity, 0),
+      totalItems,
       totalTax,
       averageTicket: salesCount > 0 ? totalSales / salesCount : 0,
       salesCount,
     };
 
-    return NextResponse.json({ data: reportRows, summary });
+    return NextResponse.json({ data: groups, summary });
   } catch (error) {
     console.error("Sales report error:", error);
     return NextResponse.json(

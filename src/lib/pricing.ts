@@ -12,7 +12,7 @@ export type PromotionPricingInput = {
   groups?: Array<{
     id?: string
     name?: string
-    type: "MANDATORY" | "ELIGIBLE"
+    type: "OBLIGATORIO" | "ELEGIBLE"
     requiredQuantity: number
     options: Array<{
       productId: string
@@ -68,7 +68,7 @@ function roundCurrency(value: number) {
 }
 
 type ResolvedComboGroup = {
-  type: "MANDATORY" | "ELIGIBLE"
+  type: "OBLIGATORIO" | "ELEGIBLE"
   requiredQuantity: number
   options: Array<{
     productId: string
@@ -100,7 +100,7 @@ function buildResolvedComboGroups(promotion: PromotionPricingInput): ResolvedCom
 
   if (promotion.comboItems?.length) {
     return [{
-      type: "MANDATORY",
+      type: "OBLIGATORIO",
       requiredQuantity: promotion.comboItems.length,
       options: promotion.comboItems.map((item) => ({
         productId: item.productId,
@@ -167,7 +167,7 @@ function resolveBestComboSelection(
   if (!groups.length) return null
 
   const selectionVariants = groups.map((group) => {
-    if (group.type === "MANDATORY") {
+    if (group.type === "OBLIGATORIO") {
       return [group.options]
     }
 

@@ -23,7 +23,7 @@ const groupOptionSchema = z.object({
 const promotionGroupSchema = z
   .object({
     name: z.string().trim().min(1).max(120),
-    type: z.enum(["MANDATORY", "ELIGIBLE"]),
+    type: z.enum(["OBLIGATORIO", "ELEGIBLE"]),
     requiredQuantity: z.number().int().positive(),
     options: z.array(groupOptionSchema).min(1, "Cada grupo necesita al menos una opción"),
   })
@@ -36,7 +36,7 @@ const promotionGroupSchema = z
       })
     }
 
-    if (group.type === "ELIGIBLE") {
+    if (group.type === "ELEGIBLE") {
       if (group.requiredQuantity < 1 || group.requiredQuantity > group.options.length) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -95,7 +95,7 @@ function normalizeComboGroups(
   if (promotion.comboItems?.length) {
     return [{
       name: "Grupo obligatorio",
-      type: "MANDATORY",
+      type: "OBLIGATORIO",
       requiredQuantity: promotion.comboItems.length,
       options: promotion.comboItems.map((item) => ({
         productId: item.productId,

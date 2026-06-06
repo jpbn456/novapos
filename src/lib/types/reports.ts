@@ -15,20 +15,24 @@ export interface ReportFilter {
 // Sales Report Types
 // ============================================
 
-export interface SalesReportRow {
+export interface SalesReportItem {
   id: string;
-  invoiceNumber: string;
-  date: string;
-  location: string;
-  cashier: string;
   product: string;
   quantity: number;
   unitPrice: number;
   subtotal: number;
-  tax: number;
-  total: number;
+}
+
+export interface SalesReportGroup {
+  invoiceNumber: string;
+  date: string;
+  location: string;
+  cashier: string;
   paymentMethod: string;
   status: string;
+  tax: number;
+  total: number;
+  items: SalesReportItem[];
 }
 
 export interface SalesReportSummary {
@@ -91,21 +95,25 @@ export interface TransferReportSummary {
 // Purchase Order Report Types
 // ============================================
 
-export interface PurchaseReportRow {
+export interface PurchaseReportItem {
   id: string;
+  product: string;
+  quantity: number;
+  unitCost: number;
+  subtotal: number;
+}
+
+export interface PurchaseReportGroup {
   orderNumber: string;
   date: string;
   supplier: string;
   location: string;
   user: string;
   status: string;
-  product: string;
-  quantity: number;
-  unitCost: number;
-  subtotal: number;
   total: number;
   expectedDate?: string;
   receivedDate?: string;
+  items: PurchaseReportItem[];
 }
 
 export interface PurchaseReportSummary {

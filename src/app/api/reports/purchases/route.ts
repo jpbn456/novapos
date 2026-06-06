@@ -53,40 +53,45 @@ export async function GET(request: Request) {
       orderBy: { createdAt: "desc" },
     });
 
-    // Transform to flat report rows (one per item)
-    const reportRows: any[] = [];
-    
+    // Group items by order
+    const groups: any[] = [];
+
     for (const order of orders) {
-      for (const item of order.items) {
-        reportRows.push({
-          id: item.id,
-          orderNumber: order.orderNumber,
-          date: format(order.createdAt, "yyyy-MM-dd"),
-          supplier: order.supplier.name,
-          location: order.location.name,
-          user: order.user.name || "N/A",
-          status: order.status,
-          product: item.product.name,
-          quantity: roundQuantity(Number(item.quantity)),
-          unitCost: Number(item.unitCost),
-          subtotal: Number(item.subtotal),
-          total: Number(order.total),
-          expectedDate: order.expectedDate ? format(order.expectedDate, "yyyy-MM-dd") : undefined,
-          receivedDate: order.receivedDate ? format(order.receivedDate, "yyyy-MM-dd") : undefined,
-        });
-      }
+      const items = order.items.map((item) => ({
+        id: item.id,
+        product: item.product.name,
+        quantity: roundQuantity(Number(item.quantity)),
+        unitCost: Number(item.unitCost),
+        subtotal: Number(item.subtotal),
+      }));
+
+      groups.push({
+        orderNumber: order.orderNumber,
+        date: format(order.createdAt, "yyyy-MM-dd"),
+        supplier: order.supplier.name,
+        location: order.location.name,
+        user: order.user.name || "N/A",
+        status: order.status,
+        total: Number(order.total),
+        expectedDate: order.expectedDate ? format(order.expectedDate, "yyyy-MM-dd") : undefined,
+        receivedDate: order.receivedDate ? format(order.receivedDate, "yyyy-MM-dd") : undefined,
+        items,
+      });
     }
 
     // Calculate summary
+    const totalValue = groups.reduce((sum, g) => sum + g.items.reduce((is: number, i: any) => is + i.subtotal, 0), 0);
+    const totalItems = groups.reduce((sum, g) => sum + g.items.reduce((is: number, i: any) => is + i.quantity, 0), 0);
+
     const summary = {
-      totalOrders: new Set(reportRows.map(r => r.orderNumber)).size,
-      totalItems: reportRows.reduce((sum, row) => sum + row.quantity, 0),
-      totalValue: reportRows.reduce((sum, row) => sum + row.subtotal, 0),
-      pendingCount: reportRows.filter(r => ["PENDING", "CONFIRMED", "PARTIALLY_RECEIVED"].includes(r.status)).length,
-      receivedCount: reportRows.filter(r => r.status === "RECEIVED").length,
+      totalOrders: groups.length,
+      totalItems,
+      totalValue,
+      pendingCount: groups.filter(g => ["PENDING", "CONFIRMED", "PARTIALLY_RECEIVED"].includes(g.status)).length,
+      receivedCount: groups.filter(g => g.status === "RECEIVED").length,
     };
 
-    return NextResponse.json({ data: reportRows, summary });
+    return NextResponse.json({ data: groups, summary });
   } catch (error) {
     console.error("Purchase report error:", error);
     return NextResponse.json(

@@ -76,7 +76,7 @@ export async function getActivePromotionsData() {
             quantity: item.quantity,
           }))
         : groups
-            .filter((group: any) => group.type === "MANDATORY")
+            .filter((group: any) => group.type === "OBLIGATORIO")
             .flatMap((group: any) =>
               group.options.map((option: any) => ({
                 productId: option.productId,

@@ -151,7 +151,7 @@ const samplePromotions = [
       {
         id: "g1",
         name: "Base",
-        type: "MANDATORY" as const,
+        type: "OBLIGATORIO" as const,
         requiredQuantity: 2,
         sortOrder: 0,
         options: [
@@ -176,7 +176,7 @@ const samplePromotions = [
       {
         id: "g2",
         name: "Bebida",
-        type: "ELIGIBLE" as const,
+        type: "ELEGIBLE" as const,
         requiredQuantity: 1,
         sortOrder: 0,
         options: [

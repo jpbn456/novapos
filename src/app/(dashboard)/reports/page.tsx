@@ -15,29 +15,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 
-interface SalesReportRow {
-  id: string
-  invoiceNumber: string
-  date: string
-  location: string
-  cashier: string
-  product: string
-  quantity: number
-  unitPrice: number
-  subtotal: number
-  tax: number
-  total: number
-  paymentMethod: string
-  status: string
-}
-
-interface SalesReportSummary {
-  totalSales: number
-  totalItems: number
-  totalTax: number
-  averageTicket: number
-  salesCount: number
-}
+import type { SalesReportGroup, SalesReportSummary } from "@/lib/types/reports"
 
 const tabs = [
   { id: "sales", label: "Ventas" },
@@ -61,7 +39,7 @@ function ReportsPageContent() {
     startDate: format(subDays(new Date(), 30), "yyyy-MM-dd"),
     endDate: format(new Date(), "yyyy-MM-dd"),
   })
-  const [salesData, setSalesData] = useState<SalesReportRow[]>([])
+  const [salesData, setSalesData] = useState<SalesReportGroup[]>([])
   const [salesSummary, setSalesSummary] = useState<SalesReportSummary | null>(null)
   const [loading, setLoading] = useState(false)
 

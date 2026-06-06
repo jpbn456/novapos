@@ -12,7 +12,7 @@ describe("validateGroups", () => {
   function makeGroup(overrides: Partial<GroupForm> = {}): GroupForm {
     return {
       name: "Grupo 1",
-      type: "MANDATORY",
+      type: "OBLIGATORIO",
       requiredQuantity: 2,
       sortOrder: 0,
       options: [
@@ -31,7 +31,7 @@ describe("validateGroups", () => {
     expect(
       validateGroups([
         makeGroup({
-          type: "ELIGIBLE",
+          type: "ELEGIBLE",
           requiredQuantity: 1,
           options: [
             { productId: "coffee", quantity: 1, sortOrder: 0 },
@@ -70,7 +70,7 @@ describe("validateGroups", () => {
     expect(
       validateGroups([
         makeGroup({
-          type: "ELIGIBLE",
+          type: "ELEGIBLE",
           requiredQuantity: 3,
           options: [
             { productId: "a", quantity: 1, sortOrder: 0 },
@@ -87,7 +87,7 @@ describe("normalizeGroups", () => {
     const result = normalizeGroups([
       {
         name: "Base",
-        type: "MANDATORY",
+        type: "OBLIGATORIO",
         requiredQuantity: 999, // ignored for mandatory
         sortOrder: 0,
         options: [
@@ -104,7 +104,7 @@ describe("normalizeGroups", () => {
     const result = normalizeGroups([
       {
         name: "Extra",
-        type: "ELIGIBLE",
+        type: "ELEGIBLE",
         requiredQuantity: 2,
         sortOrder: 0,
         options: [
@@ -122,7 +122,7 @@ describe("normalizeGroups", () => {
     const result = normalizeGroups([
       {
         name: "Extra",
-        type: "ELIGIBLE",
+        type: "ELEGIBLE",
         requiredQuantity: 10, // more than options
         sortOrder: 0,
         options: [
@@ -139,7 +139,7 @@ describe("normalizeGroups", () => {
     const result = normalizeGroups([
       {
         name: "G1",
-        type: "MANDATORY",
+        type: "OBLIGATORIO",
         requiredQuantity: 1,
         sortOrder: 5,
         options: [
@@ -158,11 +158,11 @@ describe("normalizeGroups", () => {
 
 describe("formatGroupTypeLabel", () => {
   test('returns "Obligatorio" for MANDATORY', () => {
-    expect(formatGroupTypeLabel("MANDATORY")).toBe("Obligatorio")
+    expect(formatGroupTypeLabel("OBLIGATORIO")).toBe("Obligatorio")
   })
 
   test('returns "Elegible" for ELIGIBLE', () => {
-    expect(formatGroupTypeLabel("ELIGIBLE")).toBe("Elegible")
+    expect(formatGroupTypeLabel("ELEGIBLE")).toBe("Elegible")
   })
 })
 

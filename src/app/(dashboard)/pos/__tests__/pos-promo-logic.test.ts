@@ -45,34 +45,34 @@ function makePromotion(overrides: Partial<POSPromotion> = {}): POSPromotion {
 
 describe("getGroupKey", () => {
   test("returns group id when available", () => {
-    const group = { id: "group-42", type: "MANDATORY" as const, requiredQuantity: 1, options: [] }
+    const group = { id: "group-42", type: "OBLIGATORIO" as const, requiredQuantity: 1, options: [] }
     expect(getGroupKey("promo-1", group, 0)).toBe("group-42")
   })
 
   test("falls back to promotionId-index when no group id", () => {
-    const group = { type: "MANDATORY" as const, requiredQuantity: 1, options: [] }
+    const group = { type: "OBLIGATORIO" as const, requiredQuantity: 1, options: [] }
     expect(getGroupKey("promo-1", group, 2)).toBe("promo-1-2")
   })
 })
 
 describe("formatGroupSummary", () => {
   test("shows option count for mandatory group", () => {
-    const group = { type: "MANDATORY" as const, requiredQuantity: 2, options: [{ productId: "a", quantity: 1 }, { productId: "b", quantity: 1 }] }
+    const group = { type: "OBLIGATORIO" as const, requiredQuantity: 2, options: [{ productId: "a", quantity: 1 }, { productId: "b", quantity: 1 }] }
     expect(formatGroupSummary(group)).toBe("Grupo: incluye 2 opciones")
   })
 
   test("shows singular for one mandatory option", () => {
-    const group = { type: "MANDATORY" as const, requiredQuantity: 1, options: [{ productId: "a", quantity: 1 }] }
+    const group = { type: "OBLIGATORIO" as const, requiredQuantity: 1, options: [{ productId: "a", quantity: 1 }] }
     expect(formatGroupSummary(group)).toBe("Grupo: incluye 1 opción")
   })
 
   test("shows required/total for eligible group", () => {
-    const group = { type: "ELIGIBLE" as const, requiredQuantity: 2, options: [{ productId: "a", quantity: 1 }, { productId: "b", quantity: 1 }, { productId: "c", quantity: 1 }] }
+    const group = { type: "ELEGIBLE" as const, requiredQuantity: 2, options: [{ productId: "a", quantity: 1 }, { productId: "b", quantity: 1 }, { productId: "c", quantity: 1 }] }
     expect(formatGroupSummary(group)).toBe("Grupo: elegí 2 de 3")
   })
 
   test("uses custom group name when provided", () => {
-    const group = { name: "Bebidas", type: "ELIGIBLE" as const, requiredQuantity: 1, options: [{ productId: "a", quantity: 1 }, { productId: "b", quantity: 1 }] }
+    const group = { name: "Bebidas", type: "ELEGIBLE" as const, requiredQuantity: 1, options: [{ productId: "a", quantity: 1 }, { productId: "b", quantity: 1 }] }
     expect(formatGroupSummary(group)).toBe("Bebidas: elegí 1 de 2")
   })
 })
@@ -111,7 +111,7 @@ describe("buildPromotionCartItems", () => {
       const promotion = makePromotion({
         groups: [
           {
-            type: "MANDATORY",
+            type: "OBLIGATORIO",
             requiredQuantity: 2,
             options: [
               { productId: "coffee", quantity: 1 },
@@ -133,7 +133,7 @@ describe("buildPromotionCartItems", () => {
       const promotion = makePromotion({
         groups: [
           {
-            type: "MANDATORY",
+            type: "OBLIGATORIO",
             requiredQuantity: 1,
             options: [{ productId: "unknown", quantity: 1 }],
           },
@@ -152,7 +152,7 @@ describe("buildPromotionCartItems", () => {
         groups: [
           {
             name: "Extra",
-            type: "ELIGIBLE",
+            type: "ELEGIBLE",
             requiredQuantity: 1,
             options: [
               { productId: "juice", quantity: 1 },
@@ -176,7 +176,7 @@ describe("buildPromotionCartItems", () => {
         groups: [
           {
             name: "Extra",
-            type: "ELIGIBLE",
+            type: "ELEGIBLE",
             requiredQuantity: 2,
             options: [
               { productId: "juice", quantity: 1 },
@@ -201,7 +201,7 @@ describe("buildPromotionCartItems", () => {
         groups: [
           {
             name: "Base",
-            type: "MANDATORY",
+            type: "OBLIGATORIO",
             requiredQuantity: 2,
             options: [
               { productId: "coffee", quantity: 1 },
@@ -210,7 +210,7 @@ describe("buildPromotionCartItems", () => {
           },
           {
             name: "Extra",
-            type: "ELIGIBLE",
+            type: "ELEGIBLE",
             requiredQuantity: 1,
             options: [
               { productId: "juice", quantity: 1 },

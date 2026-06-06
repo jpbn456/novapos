@@ -46,7 +46,7 @@ describe("calculatePromotionalPricing with groups", () => {
           comboPrice: 25,
           groups: [
             {
-              type: "MANDATORY",
+              type: "OBLIGATORIO",
               requiredQuantity: 2,
               options: [
                 { productId: "a", quantity: 1 },
@@ -73,12 +73,12 @@ describe("calculatePromotionalPricing with groups", () => {
           comboPrice: 30,
           groups: [
             {
-              type: "MANDATORY",
+              type: "OBLIGATORIO",
               requiredQuantity: 1,
               options: [{ productId: "a", quantity: 1 }],
             },
             {
-              type: "ELIGIBLE",
+              type: "ELEGIBLE",
               requiredQuantity: 1,
               options: [
                 { productId: "b", quantity: 1 },
@@ -102,7 +102,7 @@ describe("calculatePromotionalPricing with groups", () => {
           comboPrice: 15,
           groups: [
             {
-              type: "ELIGIBLE",
+              type: "ELEGIBLE",
               requiredQuantity: 2,
               options: [
                 { productId: "b", quantity: 1 },
@@ -126,12 +126,12 @@ describe("calculatePromotionalPricing with groups", () => {
           comboPrice: 15,
           groups: [
             {
-              type: "MANDATORY",
+              type: "OBLIGATORIO",
               requiredQuantity: 1,
               options: [{ productId: "a", quantity: 1 }],
             },
             {
-              type: "ELIGIBLE",
+              type: "ELEGIBLE",
               requiredQuantity: 1,
               options: [{ productId: "a", quantity: 1 }],
             },
@@ -176,12 +176,12 @@ describe("calculatePromotionalPricing with groups", () => {
           discountAmount: 5,
           groups: [
             {
-              type: "MANDATORY",
+              type: "OBLIGATORIO",
               requiredQuantity: 1,
               options: [{ productId: "a", quantity: 1 }],
             },
             {
-              type: "ELIGIBLE",
+              type: "ELEGIBLE",
               requiredQuantity: 1,
               options: [
                 { productId: "b", quantity: 1 },
@@ -205,7 +205,7 @@ describe("calculatePromotionalPricing with groups", () => {
           comboPrice: 5,
           groups: [
             {
-              type: "MANDATORY",
+              type: "OBLIGATORIO",
               requiredQuantity: 1,
               options: [{ productId: "b", quantity: 1 }],
             },
@@ -229,7 +229,7 @@ describe("calculatePromotionalPricing with groups", () => {
           comboPrice: 25,
           groups: [
             {
-              type: "MANDATORY",
+              type: "OBLIGATORIO",
               requiredQuantity: 2,
               options: [
                 { productId: "a", quantity: 1 },

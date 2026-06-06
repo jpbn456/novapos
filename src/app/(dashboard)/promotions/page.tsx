@@ -40,7 +40,7 @@ type PromotionGroupOption = {
 type PromotionGroup = {
   id: string
   name: string
-  type: "MANDATORY" | "ELIGIBLE"
+  type: "OBLIGATORIO" | "ELEGIBLE"
   requiredQuantity: number
   sortOrder: number
   options: PromotionGroupOption[]
@@ -70,7 +70,7 @@ export type GroupOptionForm = {
 
 export type GroupForm = {
   name: string
-  type: "MANDATORY" | "ELIGIBLE"
+  type: "OBLIGATORIO" | "ELEGIBLE"
   requiredQuantity: number
   sortOrder: number
   options: GroupOptionForm[]
@@ -93,7 +93,7 @@ function createEmptyOption(sortOrder: number): GroupOptionForm {
 function createEmptyGroup(sortOrder: number): GroupForm {
   return {
     name: `Grupo ${sortOrder + 1}`,
-    type: "MANDATORY",
+    type: "OBLIGATORIO",
     requiredQuantity: 1,
     sortOrder,
     options: [createEmptyOption(0)],
@@ -124,7 +124,7 @@ export function normalizeGroups(groups: GroupForm[]) {
     return {
       name: group.name.trim(),
       type: group.type,
-      requiredQuantity: group.type === "MANDATORY"
+      requiredQuantity: group.type === "OBLIGATORIO"
         ? options.length
         : Math.min(options.length, Math.max(1, Number(group.requiredQuantity) || 1)),
       sortOrder: groupIndex,
@@ -151,7 +151,7 @@ export function validateGroups(groups: GroupForm[]) {
       return `Completá todos los productos del grupo ${group.name || "sin nombre"}.`
     }
 
-    if (group.type === "ELIGIBLE" && group.requiredQuantity > group.options.length) {
+    if (group.type === "ELEGIBLE" && group.requiredQuantity > group.options.length) {
       return `En ${group.name || "el grupo elegible"}, la cantidad requerida no puede superar las opciones.`
     }
   }
@@ -159,8 +159,8 @@ export function validateGroups(groups: GroupForm[]) {
   return null
 }
 
-export function formatGroupTypeLabel(type: "MANDATORY" | "ELIGIBLE") {
-  return type === "MANDATORY" ? "Obligatorio" : "Elegible"
+export function formatGroupTypeLabel(type: "OBLIGATORIO" | "ELEGIBLE") {
+  return type === "OBLIGATORIO" ? "Obligatorio" : "Elegible"
 }
 
 export function formatComboSummary(promotion: Promotion) {
@@ -174,6 +174,7 @@ export function formatComboSummary(promotion: Promotion) {
 export default function PromotionsPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [promotions, setPromotions] = useState<Promotion[]>([])
+  const [view, setView] = useState<"list" | "create">("list")
   const [editingPromotionId, setEditingPromotionId] = useState<string | null>(null)
   const [type, setType] = useState<"COMBO" | "SCALE">("COMBO")
   const [name, setName] = useState("")
@@ -205,6 +206,7 @@ export default function PromotionsPage() {
   }, [])
 
   function resetForm() {
+    setView("list")
     setEditingPromotionId(null)
     setType("COMBO")
     setName("")
@@ -219,6 +221,7 @@ export default function PromotionsPage() {
   }
 
   function startEdit(promotion: Promotion) {
+    setView("create")
     setEditingPromotionId(promotion.id)
     setType(promotion.type)
     setName(promotion.name)
@@ -243,7 +246,7 @@ export default function PromotionsPage() {
           ? promotion.groups.map((group, groupIndex) => ({
               name: group.name,
               type: group.type,
-              requiredQuantity: group.type === "MANDATORY" ? group.options.length : group.requiredQuantity,
+              requiredQuantity: group.type === "OBLIGATORIO" ? group.options.length : group.requiredQuantity,
               sortOrder: group.sortOrder ?? groupIndex,
               options: group.options.map((option, optionIndex) => ({
                 productId: option.productId,
@@ -358,9 +361,19 @@ export default function PromotionsPage() {
       <PageHeader
         title="Promociones"
         description="Armá, editá, activá o eliminá combos y promociones escaladas por cantidad."
+        actions={
+          <div className="flex gap-2">
+            <Button variant={view === "create" ? "default" : "outline"} size="sm" onClick={() => { resetForm(); setView("create") }}>
+              Nuevo combo
+            </Button>
+            <Button variant={view === "list" ? "default" : "outline"} size="sm" onClick={() => setView("list")}>
+              Combos
+            </Button>
+          </div>
+        }
       />
 
-      <div className="grid gap-6 xl:grid-cols-[460px_minmax(0,1fr)]">
+      {view === "create" ? (
         <Card>
           <CardHeader>
             <div>
@@ -441,12 +454,12 @@ export default function PromotionsPage() {
                             <select
                               value={group.type}
                               onChange={(event) => {
-                                const nextType = event.target.value as "MANDATORY" | "ELIGIBLE"
+                                const nextType = event.target.value as "OBLIGATORIO" | "ELEGIBLE"
                                 setGroups((current) => current.map((entry, currentIndex) => currentIndex === groupIndex
                                   ? {
                                       ...entry,
                                       type: nextType,
-                                      requiredQuantity: nextType === "MANDATORY"
+                                      requiredQuantity: nextType === "OBLIGATORIO"
                                         ? entry.options.length
                                         : Math.min(Math.max(1, entry.requiredQuantity), entry.options.length),
                                     }
@@ -454,8 +467,8 @@ export default function PromotionsPage() {
                               }}
                               className="h-11 w-full rounded-md border border-input bg-background px-3"
                             >
-                              <option value="MANDATORY">MANDATORY</option>
-                              <option value="ELIGIBLE">ELIGIBLE</option>
+                              <option value="OBLIGATORIO">Obligatorio</option>
+                              <option value="ELEGIBLE">Elegible</option>
                             </select>
                           </div>
                           <div className="space-y-2">
@@ -464,8 +477,8 @@ export default function PromotionsPage() {
                               type="number"
                               min="1"
                               max={String(Math.max(1, group.options.length))}
-                              disabled={group.type === "MANDATORY"}
-                              value={group.type === "MANDATORY" ? group.options.length : group.requiredQuantity}
+                              disabled={group.type === "OBLIGATORIO"}
+                              value={group.type === "OBLIGATORIO" ? group.options.length : group.requiredQuantity}
                               onChange={(event) => setGroups((current) => current.map((entry, currentIndex) => currentIndex === groupIndex
                                 ? {
                                     ...entry,
@@ -474,7 +487,7 @@ export default function PromotionsPage() {
                                 : entry))}
                             />
                             <p className="text-xs text-muted-foreground">
-                              {group.type === "MANDATORY"
+                              {group.type === "OBLIGATORIO"
                                 ? "Los grupos obligatorios incluyen todas sus opciones."
                                 : `Elegí hasta ${group.options.length} opción${group.options.length === 1 ? "" : "es"}.`}
                             </p>
@@ -489,7 +502,7 @@ export default function PromotionsPage() {
                         <div className="flex items-center justify-between gap-3">
                           <div className="flex items-center gap-2">
                             <Label>Opciones</Label>
-                            <Badge variant={group.type === "MANDATORY" ? "secondary" : "info"}>{formatGroupTypeLabel(group.type)}</Badge>
+                            <Badge variant={group.type === "OBLIGATORIO" ? "secondary" : "info"}>{formatGroupTypeLabel(group.type)}</Badge>
                           </div>
                           <Button
                             variant="outline"
@@ -499,7 +512,7 @@ export default function PromotionsPage() {
                               ? {
                                   ...entry,
                                   options: [...entry.options, createEmptyOption(entry.options.length)],
-                                  requiredQuantity: entry.type === "MANDATORY"
+                                  requiredQuantity: entry.type === "OBLIGATORIO"
                                     ? entry.options.length + 1
                                     : Math.min(entry.options.length + 1, entry.requiredQuantity),
                                 }
@@ -546,7 +559,7 @@ export default function PromotionsPage() {
                                 return {
                                   ...entry,
                                   options: nextOptions.length ? nextOptions : [createEmptyOption(0)],
-                                  requiredQuantity: entry.type === "MANDATORY"
+                                  requiredQuantity: entry.type === "OBLIGATORIO"
                                     ? Math.max(1, nextOptions.length || 1)
                                     : Math.min(Math.max(1, entry.requiredQuantity), Math.max(1, nextOptions.length || 1)),
                                 }
@@ -604,7 +617,7 @@ export default function PromotionsPage() {
             </div>
           </CardContent>
         </Card>
-
+      ) : (
         <Card>
           <CardHeader>
             <div>
@@ -639,8 +652,8 @@ export default function PromotionsPage() {
                         <div key={group.id} className="rounded-xl border border-border/60 bg-muted/20 p-3">
                           <div className="flex flex-wrap items-center gap-2">
                             <p className="font-medium text-foreground">{group.name}</p>
-                            <Badge variant={group.type === "MANDATORY" ? "secondary" : "info"}>{formatGroupTypeLabel(group.type)}</Badge>
-                            <span>Requeridas: {group.type === "MANDATORY" ? group.options.length : group.requiredQuantity}</span>
+                            <Badge variant={group.type === "OBLIGATORIO" ? "secondary" : "info"}>{formatGroupTypeLabel(group.type)}</Badge>
+                            <span>Requeridas: {group.type === "OBLIGATORIO" ? group.options.length : group.requiredQuantity}</span>
                           </div>
                           <div className="mt-2 space-y-1">
                             {group.options.map((option) => (
@@ -663,7 +676,7 @@ export default function PromotionsPage() {
             ))}
           </CardContent>
         </Card>
-      </div>
+      )}
     </div>
   )
 }

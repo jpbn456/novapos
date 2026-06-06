@@ -54,7 +54,7 @@ describe("promotion actions with grouped combos", () => {
       groups: [
         {
           name: "Base",
-          type: "MANDATORY",
+          type: "OBLIGATORIO",
           requiredQuantity: 2,
           options: [
             { productId: "coffee", quantity: 1 },
@@ -63,7 +63,7 @@ describe("promotion actions with grouped combos", () => {
         },
         {
           name: "Extra",
-          type: "ELIGIBLE",
+          type: "ELEGIBLE",
           requiredQuantity: 1,
           options: [
             { productId: "juice", quantity: 1 },
@@ -93,7 +93,7 @@ describe("promotion actions with grouped combos", () => {
           create: [
             {
               name: "Base",
-              type: "MANDATORY",
+              type: "OBLIGATORIO",
               requiredQuantity: 2,
               sortOrder: 0,
               options: {
@@ -105,7 +105,7 @@ describe("promotion actions with grouped combos", () => {
             },
             {
               name: "Extra",
-              type: "ELIGIBLE",
+              type: "ELEGIBLE",
               requiredQuantity: 1,
               sortOrder: 1,
               options: {
@@ -129,7 +129,7 @@ describe("promotion actions with grouped combos", () => {
       groups: [
         {
           name: "Elegibles",
-          type: "ELIGIBLE",
+          type: "ELEGIBLE",
           requiredQuantity: 2,
           options: [{ productId: "juice", quantity: 1 }],
         },
@@ -149,7 +149,7 @@ describe("promotion actions with grouped combos", () => {
       groups: [
         {
           name: "Vacío",
-          type: "MANDATORY",
+          type: "OBLIGATORIO",
           requiredQuantity: 1,
           options: [],
         },
@@ -169,7 +169,7 @@ describe("promotion actions with grouped combos", () => {
       groups: [
         {
           name: "Base",
-          type: "MANDATORY",
+          type: "OBLIGATORIO",
           requiredQuantity: 2,
           options: [
             { productId: "coffee", quantity: 1 },
@@ -203,7 +203,7 @@ describe("promotion actions with grouped combos", () => {
           create: [
             {
               name: "Grupo obligatorio",
-              type: "MANDATORY",
+              type: "OBLIGATORIO",
               requiredQuantity: 2,
               sortOrder: 0,
               options: {
@@ -230,7 +230,7 @@ describe("promotion actions with grouped combos", () => {
       groups: [
         {
           name: "Nuevo grupo",
-          type: "MANDATORY",
+          type: "OBLIGATORIO",
           requiredQuantity: 1,
           options: [{ productId: "coffee", quantity: 1 }],
         },
@@ -255,7 +255,7 @@ describe("promotion actions with grouped combos", () => {
           create: [
             {
               name: "Nuevo grupo",
-              type: "MANDATORY",
+              type: "OBLIGATORIO",
               requiredQuantity: 1,
               sortOrder: 0,
               options: {

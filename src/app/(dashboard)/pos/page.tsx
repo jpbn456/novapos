@@ -114,7 +114,7 @@ export type PromoOption = {
 export type PromoGroup = {
   id?: string
   name?: string
-  type: "MANDATORY" | "ELIGIBLE"
+  type: "OBLIGATORIO" | "ELEGIBLE"
   requiredQuantity: number
   sortOrder?: number
   options: PromoOption[]
@@ -154,7 +154,7 @@ export function pluralizeOptions(count: number) {
 }
 
 export function formatGroupSummary(group: PromoGroup) {
-  if (group.type === "MANDATORY") {
+  if (group.type === "OBLIGATORIO") {
     return `${group.name || "Grupo"}: incluye ${group.options.length} ${pluralizeOptions(group.options.length)}`
   }
 
@@ -177,11 +177,11 @@ export function buildPromotionCartItems(
       const groupKey = getGroupKey(promotion.id, group, groupIndex)
       const selectedIds = new Set(selections[groupKey] || [])
 
-      const selectedOptions = group.type === "MANDATORY"
+      const selectedOptions = group.type === "OBLIGATORIO"
         ? group.options
         : group.options.filter((option) => selectedIds.has(option.productId))
 
-      if (group.type === "ELIGIBLE" && selectedOptions.length !== group.requiredQuantity) {
+      if (group.type === "ELEGIBLE" && selectedOptions.length !== group.requiredQuantity) {
         return { items: [], error: `Completá ${group.name || "las selecciones"} antes de confirmar.` }
       }
 
@@ -348,7 +348,7 @@ function POSContent() {
   }
 
   function isPromoSelectionComplete(promotion: POSPromotion) {
-    const eligibleGroups = promotion.groups?.filter((group) => group.type === "ELIGIBLE") || []
+    const eligibleGroups = promotion.groups?.filter((group) => group.type === "ELEGIBLE") || []
     return eligibleGroups.every((group, groupIndex) => {
       const actualGroupIndex = promotion.groups?.findIndex((entry) => entry === group) ?? groupIndex
       const groupKey = getGroupKey(promotion.id, group, actualGroupIndex)
@@ -387,7 +387,7 @@ function POSContent() {
   }
 
   function handlePromoCardClick(promotion: POSPromotion) {
-    const hasEligibleGroups = promotion.groups?.some((group) => group.type === "ELIGIBLE")
+    const hasEligibleGroups = promotion.groups?.some((group) => group.type === "ELEGIBLE")
 
     if (!hasEligibleGroups) {
       const result = buildPromotionCartItems(promotion, productLookup, {})
@@ -403,7 +403,7 @@ function POSContent() {
 
     const nextSelections: Record<string, string[]> = {}
     promotion.groups?.forEach((group, index) => {
-      if (group.type === "ELIGIBLE") {
+      if (group.type === "ELEGIBLE") {
         nextSelections[getGroupKey(promotion.id, group, index)] = []
       }
     })
@@ -947,7 +947,7 @@ function POSContent() {
             {selectedPromotion?.groups?.map((group, groupIndex) => {
               const groupKey = getGroupKey(selectedPromotion.id, group, groupIndex)
               const selectedIds = new Set(promoSelections[groupKey] || [])
-              const isMandatory = group.type === "MANDATORY"
+              const isMandatory = group.type === "OBLIGATORIO"
 
               return (
                 <div key={groupKey} className="space-y-3 rounded-2xl border border-border/70 p-4">

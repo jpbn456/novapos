@@ -491,8 +491,8 @@ model Promotion {
 }
 
 enum GroupType {
-  MANDATORY
-  ELIGIBLE
+  OBLIGATORIO
+  ELEGIBLE
 }
 
 model PromotionProduct {
