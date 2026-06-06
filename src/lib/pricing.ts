@@ -5,9 +5,19 @@ export type PromotionPricingInput = {
   comboPrice?: number | null
   discountPercent?: number | null
   discountAmount?: number | null
-  comboItems: Array<{
+  comboItems?: Array<{
     productId: string
     quantity: number
+  }>
+  groups?: Array<{
+    id?: string
+    name?: string
+    type: "MANDATORY" | "ELIGIBLE"
+    requiredQuantity: number
+    options: Array<{
+      productId: string
+      quantity: number
+    }>
   }>
   tiers: Array<{
     productId?: string | null
@@ -57,6 +67,244 @@ function roundCurrency(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100
 }
 
+type ResolvedComboGroup = {
+  type: "MANDATORY" | "ELIGIBLE"
+  requiredQuantity: number
+  options: Array<{
+    productId: string
+    quantity: number
+  }>
+}
+
+type ResolvedComboSelection = {
+  bundleCount: number
+  bundleBaseTotal: number
+  totalDiscount: number
+  selectedOptions: Array<{
+    productId: string
+    quantity: number
+  }>
+}
+
+function buildResolvedComboGroups(promotion: PromotionPricingInput): ResolvedComboGroup[] {
+  if (promotion.groups?.length) {
+    return promotion.groups.map((group) => ({
+      type: group.type,
+      requiredQuantity: group.requiredQuantity,
+      options: group.options.map((option) => ({
+        productId: option.productId,
+        quantity: option.quantity,
+      })),
+    }))
+  }
+
+  if (promotion.comboItems?.length) {
+    return [{
+      type: "MANDATORY",
+      requiredQuantity: promotion.comboItems.length,
+      options: promotion.comboItems.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+      })),
+    }]
+  }
+
+  return []
+}
+
+function getCombinationIndices(length: number, choose: number): number[][] {
+  if (choose <= 0 || choose > length) return []
+
+  const combinations: number[][] = []
+  const current: number[] = []
+
+  function backtrack(start: number) {
+    if (current.length === choose) {
+      combinations.push([...current])
+      return
+    }
+
+    for (let index = start; index <= length - (choose - current.length); index += 1) {
+      current.push(index)
+      backtrack(index + 1)
+      current.pop()
+    }
+  }
+
+  backtrack(0)
+  return combinations
+}
+
+function calculateBundleDiscount(
+  promotion: PromotionPricingInput,
+  bundleBaseTotal: number
+) {
+  if (promotion.comboPrice != null) {
+    return roundCurrency(Math.max(bundleBaseTotal - promotion.comboPrice, 0))
+  }
+
+  if (promotion.discountPercent != null) {
+    return roundCurrency(bundleBaseTotal * (promotion.discountPercent / 100))
+  }
+
+  if (promotion.discountAmount != null) {
+    return roundCurrency(Math.min(promotion.discountAmount, bundleBaseTotal))
+  }
+
+  return 0
+}
+
+function resolveBestComboSelection(
+  promotion: PromotionPricingInput,
+  lineMap: Map<string, {
+    productId: string
+    quantity: number
+    baseUnitPrice: number
+  }>,
+  consumedForCombos: Map<string, number>
+): ResolvedComboSelection | null {
+  const groups = buildResolvedComboGroups(promotion)
+  if (!groups.length) return null
+
+  const selectionVariants = groups.map((group) => {
+    if (group.type === "MANDATORY") {
+      return [group.options]
+    }
+
+    return getCombinationIndices(group.options.length, group.requiredQuantity).map((indices) =>
+      indices.map((index) => group.options[index])
+    )
+  })
+
+  if (selectionVariants.some((variants) => variants.length === 0)) {
+    return null
+  }
+
+  let bestSelection: ResolvedComboSelection | null = null
+
+  function evaluateSelection(selectedGroups: Array<Array<{ productId: string; quantity: number }>>) {
+    const aggregatedRequirements = new Map<string, number>()
+    let bundleBaseTotal = 0
+
+    for (const selectedOptions of selectedGroups) {
+      for (const option of selectedOptions) {
+        const line = lineMap.get(option.productId)
+        if (!line) return
+
+        const availableQuantity = line.quantity - (consumedForCombos.get(option.productId) || 0)
+        if (availableQuantity < option.quantity) return
+
+        aggregatedRequirements.set(
+          option.productId,
+          (aggregatedRequirements.get(option.productId) || 0) + option.quantity
+        )
+        bundleBaseTotal += line.baseUnitPrice * option.quantity
+      }
+    }
+
+    let bundleCount = Number.POSITIVE_INFINITY
+    for (const [productId, requiredQuantity] of aggregatedRequirements) {
+      const line = lineMap.get(productId)
+      if (!line) return
+
+      const availableQuantity = line.quantity - (consumedForCombos.get(productId) || 0)
+      bundleCount = Math.min(bundleCount, Math.floor(availableQuantity / requiredQuantity))
+    }
+
+    if (!Number.isFinite(bundleCount) || bundleCount <= 0) return
+
+    const normalizedBundleBaseTotal = roundCurrency(bundleBaseTotal)
+    const bundleDiscount = calculateBundleDiscount(promotion, normalizedBundleBaseTotal)
+    if (bundleDiscount <= 0) return
+
+    const totalDiscount = roundCurrency(bundleDiscount * bundleCount)
+    const selectedOptions = selectedGroups.flat()
+
+    const candidate: ResolvedComboSelection = {
+      bundleCount,
+      bundleBaseTotal: normalizedBundleBaseTotal,
+      totalDiscount,
+      selectedOptions,
+    }
+
+    if (
+      !bestSelection ||
+      candidate.totalDiscount > bestSelection.totalDiscount ||
+      (candidate.totalDiscount === bestSelection.totalDiscount && candidate.bundleBaseTotal < bestSelection.bundleBaseTotal)
+    ) {
+      bestSelection = candidate
+    }
+  }
+
+  function walk(groupIndex: number, selectedGroups: Array<Array<{ productId: string; quantity: number }>>) {
+    if (groupIndex === selectionVariants.length) {
+      evaluateSelection(selectedGroups)
+      return
+    }
+
+    for (const variant of selectionVariants[groupIndex]) {
+      selectedGroups.push(variant)
+      walk(groupIndex + 1, selectedGroups)
+      selectedGroups.pop()
+    }
+  }
+
+  walk(0, [])
+  return bestSelection
+}
+
+function allocateComboDiscount(
+  lineMap: Map<string, {
+    productId: string
+    quantity: number
+    baseUnitPrice: number
+    discountedSubtotal: number
+    savings: number
+    appliedPromotions: AppliedPromotionSummary[]
+  }>,
+  consumedForCombos: Map<string, number>,
+  promotion: PromotionPricingInput,
+  selection: ResolvedComboSelection
+) {
+  const aggregatedSelections = new Map<string, number>()
+  for (const option of selection.selectedOptions) {
+    aggregatedSelections.set(option.productId, (aggregatedSelections.get(option.productId) || 0) + option.quantity)
+  }
+
+  const lineApplications = Array.from(aggregatedSelections.entries()).map(([productId, quantity]) => {
+    const line = lineMap.get(productId)
+    return {
+      productId,
+      quantity,
+      line,
+      subtotal: line ? line.baseUnitPrice * quantity * selection.bundleCount : 0,
+    }
+  }).filter((entry) => entry.line)
+
+  let allocatedDiscount = 0
+
+  lineApplications.forEach((entry, index) => {
+    const line = entry.line!
+    const lineDiscount = index === lineApplications.length - 1
+      ? roundCurrency(selection.totalDiscount - allocatedDiscount)
+      : roundCurrency(selection.totalDiscount * (entry.subtotal / (selection.bundleBaseTotal * selection.bundleCount)))
+
+    allocatedDiscount = roundCurrency(allocatedDiscount + lineDiscount)
+    line.discountedSubtotal = roundCurrency(line.discountedSubtotal - lineDiscount)
+    line.savings = roundCurrency(line.savings + lineDiscount)
+    line.appliedPromotions.push({
+      promotionId: promotion.id,
+      promotionName: promotion.name,
+      type: "COMBO",
+      discount: lineDiscount,
+    })
+    consumedForCombos.set(
+      entry.productId,
+      (consumedForCombos.get(entry.productId) || 0) + entry.quantity * selection.bundleCount
+    )
+  })
+}
+
 export function calculatePromotionalPricing(
   items: PricingItemInput[],
   promotions: PromotionPricingInput[]
@@ -77,70 +325,16 @@ export function calculatePromotionalPricing(
 
   const comboPromotions = promotions.filter((promotion) => promotion.type === "COMBO")
   for (const promotion of comboPromotions) {
-    if (!promotion.comboItems.length) continue
+    const selection = resolveBestComboSelection(promotion, lineMap, consumedForCombos)
+    if (!selection) continue
 
-    let bundleCount = Number.POSITIVE_INFINITY
-    for (const comboItem of promotion.comboItems) {
-      const line = lineMap.get(comboItem.productId)
-      if (!line) {
-        bundleCount = 0
-        break
-      }
-
-      const availableQuantity = line.quantity - (consumedForCombos.get(comboItem.productId) || 0)
-      bundleCount = Math.min(bundleCount, Math.floor(availableQuantity / comboItem.quantity))
-    }
-
-    if (!Number.isFinite(bundleCount) || bundleCount <= 0) continue
-
-    const bundleBaseTotal = roundCurrency(
-      promotion.comboItems.reduce((sum, comboItem) => {
-        const line = lineMap.get(comboItem.productId)
-        return sum + (line ? line.baseUnitPrice * comboItem.quantity : 0)
-      }, 0)
-    )
-
-    let bundleDiscount = 0
-    if (promotion.comboPrice != null) {
-      bundleDiscount = Math.max(bundleBaseTotal - promotion.comboPrice, 0)
-    } else if (promotion.discountPercent != null) {
-      bundleDiscount = bundleBaseTotal * (promotion.discountPercent / 100)
-    } else if (promotion.discountAmount != null) {
-      bundleDiscount = promotion.discountAmount
-    }
-
-    bundleDiscount = roundCurrency(bundleDiscount)
-    if (bundleDiscount <= 0) continue
-
-    const totalDiscount = roundCurrency(bundleDiscount * bundleCount)
-    let allocatedDiscount = 0
-
-    promotion.comboItems.forEach((comboItem, index) => {
-      const line = lineMap.get(comboItem.productId)
-      if (!line) return
-
-      const bundleContribution = line.baseUnitPrice * comboItem.quantity * bundleCount
-      const lineDiscount = index === promotion.comboItems.length - 1
-        ? roundCurrency(totalDiscount - allocatedDiscount)
-        : roundCurrency(totalDiscount * (bundleContribution / (bundleBaseTotal * bundleCount)))
-
-      allocatedDiscount = roundCurrency(allocatedDiscount + lineDiscount)
-      line.discountedSubtotal = roundCurrency(line.discountedSubtotal - lineDiscount)
-      line.savings = roundCurrency(line.savings + lineDiscount)
-      line.appliedPromotions.push({
-        promotionId: promotion.id,
-        promotionName: promotion.name,
-        type: "COMBO",
-        discount: lineDiscount,
-      })
-      consumedForCombos.set(comboItem.productId, (consumedForCombos.get(comboItem.productId) || 0) + comboItem.quantity * bundleCount)
-    })
+    allocateComboDiscount(lineMap, consumedForCombos, promotion, selection)
 
     appliedPromotions.push({
       promotionId: promotion.id,
       promotionName: promotion.name,
       type: "COMBO",
-      discount: totalDiscount,
+      discount: selection.totalDiscount,
     })
   }
 

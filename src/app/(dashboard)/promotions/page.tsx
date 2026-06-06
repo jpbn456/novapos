@@ -11,6 +11,7 @@ import {
 } from "@/app/actions/promotions"
 import { getProducts } from "@/app/actions/products"
 import { PageHeader } from "@/components/dashboard/page-primitives"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -28,6 +29,23 @@ type PromotionProduct = {
   product: Product
 }
 
+type PromotionGroupOption = {
+  id: string
+  productId: string
+  quantity: number
+  sortOrder: number
+  product: Product
+}
+
+type PromotionGroup = {
+  id: string
+  name: string
+  type: "MANDATORY" | "ELIGIBLE"
+  requiredQuantity: number
+  sortOrder: number
+  options: PromotionGroupOption[]
+}
+
 type Promotion = {
   id: string
   name: string
@@ -40,13 +58,22 @@ type Promotion = {
   discountPercent?: number | null
   discountAmount?: number | null
   products: PromotionProduct[]
-  comboItems: Array<{ id: string; quantity: number; productId: string; product: Product }>
+  groups: PromotionGroup[]
   tiers: Array<{ id: string; minimumQuantity: number; discountPercent?: number | null; discountAmount?: number | null; product?: Product | null }>
 }
 
-type ComboItemForm = {
+export type GroupOptionForm = {
   productId: string
   quantity: number
+  sortOrder: number
+}
+
+export type GroupForm = {
+  name: string
+  type: "MANDATORY" | "ELIGIBLE"
+  requiredQuantity: number
+  sortOrder: number
+  options: GroupOptionForm[]
 }
 
 type TierForm = {
@@ -55,8 +82,26 @@ type TierForm = {
   value: number
 }
 
-function emptyComboItems(): ComboItemForm[] {
-  return [{ productId: "", quantity: 1 }, { productId: "", quantity: 1 }]
+function createEmptyOption(sortOrder: number): GroupOptionForm {
+  return {
+    productId: "",
+    quantity: 1,
+    sortOrder,
+  }
+}
+
+function createEmptyGroup(sortOrder: number): GroupForm {
+  return {
+    name: `Grupo ${sortOrder + 1}`,
+    type: "MANDATORY",
+    requiredQuantity: 1,
+    sortOrder,
+    options: [createEmptyOption(0)],
+  }
+}
+
+function emptyGroups(): GroupForm[] {
+  return [createEmptyGroup(0)]
 }
 
 function emptyTiers(): TierForm[] {
@@ -66,6 +111,64 @@ function emptyTiers(): TierForm[] {
 function formatDateInput(value?: string | null) {
   if (!value) return ""
   return new Date(value).toISOString().slice(0, 10)
+}
+
+export function normalizeGroups(groups: GroupForm[]) {
+  return groups.map((group, groupIndex) => {
+    const options = group.options.map((option, optionIndex) => ({
+      productId: option.productId,
+      quantity: Math.max(1, Number(option.quantity) || 1),
+      sortOrder: optionIndex,
+    }))
+
+    return {
+      name: group.name.trim(),
+      type: group.type,
+      requiredQuantity: group.type === "MANDATORY"
+        ? options.length
+        : Math.min(options.length, Math.max(1, Number(group.requiredQuantity) || 1)),
+      sortOrder: groupIndex,
+      options,
+    }
+  })
+}
+
+export function validateGroups(groups: GroupForm[]) {
+  if (groups.length === 0) {
+    return "El combo necesita al menos un grupo."
+  }
+
+  for (const group of groups) {
+    if (!group.name.trim()) {
+      return "Cada grupo necesita un nombre."
+    }
+
+    if (group.options.length === 0) {
+      return `El grupo ${group.name || "sin nombre"} necesita al menos una opción.`
+    }
+
+    if (group.options.some((option) => !option.productId)) {
+      return `Completá todos los productos del grupo ${group.name || "sin nombre"}.`
+    }
+
+    if (group.type === "ELIGIBLE" && group.requiredQuantity > group.options.length) {
+      return `En ${group.name || "el grupo elegible"}, la cantidad requerida no puede superar las opciones.`
+    }
+  }
+
+  return null
+}
+
+export function formatGroupTypeLabel(type: "MANDATORY" | "ELIGIBLE") {
+  return type === "MANDATORY" ? "Obligatorio" : "Elegible"
+}
+
+export function formatComboSummary(promotion: Promotion) {
+  return promotion.comboPrice != null
+    ? `Precio combo: $${promotion.comboPrice}`
+    : promotion.discountPercent != null
+      ? `Descuento: ${promotion.discountPercent}%`
+      : `Descuento fijo: $${promotion.discountAmount || 0}`
 }
 
 export default function PromotionsPage() {
@@ -79,7 +182,7 @@ export default function PromotionsPage() {
   const [endsAt, setEndsAt] = useState("")
   const [comboMode, setComboMode] = useState<"PRICE" | "PERCENT" | "AMOUNT">("PRICE")
   const [comboValue, setComboValue] = useState("")
-  const [comboItems, setComboItems] = useState<ComboItemForm[]>(emptyComboItems())
+  const [groups, setGroups] = useState<GroupForm[]>(emptyGroups())
   const [scaleProductId, setScaleProductId] = useState("")
   const [tiers, setTiers] = useState<TierForm[]>(emptyTiers())
   const [submitting, setSubmitting] = useState(false)
@@ -110,7 +213,7 @@ export default function PromotionsPage() {
     setEndsAt("")
     setComboMode("PRICE")
     setComboValue("")
-    setComboItems(emptyComboItems())
+    setGroups(emptyGroups())
     setScaleProductId("")
     setTiers(emptyTiers())
   }
@@ -135,22 +238,37 @@ export default function PromotionsPage() {
         setComboValue(String(promotion.discountAmount || ""))
       }
 
-      setComboItems(promotion.comboItems.map((item) => ({ productId: item.productId, quantity: item.quantity })))
+      setGroups(
+        promotion.groups.length
+          ? promotion.groups.map((group, groupIndex) => ({
+              name: group.name,
+              type: group.type,
+              requiredQuantity: group.type === "MANDATORY" ? group.options.length : group.requiredQuantity,
+              sortOrder: group.sortOrder ?? groupIndex,
+              options: group.options.map((option, optionIndex) => ({
+                productId: option.productId,
+                quantity: option.quantity,
+                sortOrder: option.sortOrder ?? optionIndex,
+              })),
+            }))
+          : emptyGroups()
+      )
       setScaleProductId("")
       setTiers(emptyTiers())
-    } else {
-      setScaleProductId(promotion.products[0]?.productId || promotion.products[0]?.product.id || "")
-      setTiers(
-        promotion.tiers.map((tier) => ({
-          minimumQuantity: tier.minimumQuantity,
-          mode: tier.discountPercent != null ? "PERCENT" : "AMOUNT",
-          value: tier.discountPercent ?? tier.discountAmount ?? 0,
-        }))
-      )
-      setComboItems(emptyComboItems())
-      setComboValue("")
-      setComboMode("PRICE")
+      return
     }
+
+    setScaleProductId(promotion.products[0]?.productId || promotion.products[0]?.product.id || "")
+    setTiers(
+      promotion.tiers.map((tier) => ({
+        minimumQuantity: tier.minimumQuantity,
+        mode: tier.discountPercent != null ? "PERCENT" : "AMOUNT",
+        value: tier.discountPercent ?? tier.discountAmount ?? 0,
+      }))
+    )
+    setGroups(emptyGroups())
+    setComboValue("")
+    setComboMode("PRICE")
   }
 
   function buildPayload() {
@@ -164,7 +282,7 @@ export default function PromotionsPage() {
         comboPrice: comboMode === "PRICE" ? Number(comboValue) : undefined,
         discountPercent: comboMode === "PERCENT" ? Number(comboValue) : undefined,
         discountAmount: comboMode === "AMOUNT" ? Number(comboValue) : undefined,
-        comboItems: comboItems.filter((item) => item.productId),
+        groups: normalizeGroups(groups),
       }
     }
 
@@ -184,6 +302,14 @@ export default function PromotionsPage() {
   }
 
   async function handleSubmit() {
+    if (type === "COMBO") {
+      const validationError = validateGroups(groups)
+      if (validationError) {
+        alert(validationError)
+        return
+      }
+    }
+
     setSubmitting(true)
     const payload = buildPayload()
     const result = editingPromotionId
@@ -237,15 +363,17 @@ export default function PromotionsPage() {
       <div className="grid gap-6 xl:grid-cols-[460px_minmax(0,1fr)]">
         <Card>
           <CardHeader>
-            <CardTitle>{editingPromotionId ? "Editar promoción" : "Nueva promoción"}</CardTitle>
-            <CardDescription>
-              {editingPromotionId ? "Ajustá la promoción y guardá los cambios." : "Elegí si querés un combo o una escala por cantidad."}
-            </CardDescription>
+            <div>
+              <CardTitle>{editingPromotionId ? "Editar promoción" : "Nueva promoción"}</CardTitle>
+              <CardDescription>
+                {editingPromotionId ? "Ajustá la promoción y guardá los cambios." : "Elegí si querés un combo o una escala por cantidad."}
+              </CardDescription>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label>Tipo</Label>
-              <select value={type} onChange={(event) => setType(event.target.value as "COMBO" | "SCALE")} className="w-full h-11 rounded-md border border-input bg-background px-3" disabled={Boolean(editingPromotionId)}>
+              <select value={type} onChange={(event) => setType(event.target.value as "COMBO" | "SCALE")} className="h-11 w-full rounded-md border border-input bg-background px-3" disabled={Boolean(editingPromotionId)}>
                 <option value="COMBO">Combo</option>
                 <option value="SCALE">Escalada por cantidad</option>
               </select>
@@ -277,7 +405,7 @@ export default function PromotionsPage() {
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Estrategia</Label>
-                    <select value={comboMode} onChange={(event) => setComboMode(event.target.value as "PRICE" | "PERCENT" | "AMOUNT")} className="w-full h-11 rounded-md border border-input bg-background px-3">
+                    <select value={comboMode} onChange={(event) => setComboMode(event.target.value as "PRICE" | "PERCENT" | "AMOUNT")} className="h-11 w-full rounded-md border border-input bg-background px-3">
                       <option value="PRICE">Precio combo</option>
                       <option value="PERCENT">Descuento %</option>
                       <option value="AMOUNT">Descuento fijo</option>
@@ -290,36 +418,155 @@ export default function PromotionsPage() {
                 </div>
 
                 <div className="space-y-3">
-                  <Label>Productos del combo</Label>
-                  {comboItems.map((item, index) => (
-                    <div key={index} className="grid gap-3 md:grid-cols-[minmax(0,1fr)_100px_80px]">
-                      <select
-                        value={item.productId}
-                        onChange={(event) => setComboItems((current) => current.map((entry, currentIndex) => currentIndex === index ? { ...entry, productId: event.target.value } : entry))}
-                        className="h-11 rounded-md border border-input bg-background px-3"
-                      >
-                        <option value="">Seleccionar producto</option>
-                        {products.map((product) => (
-                          <option key={product.id} value={product.id}>{product.name} (ID {product.productNumber})</option>
+                  <div className="flex items-center justify-between gap-3">
+                    <Label>Grupos del combo</Label>
+                    <Button variant="outline" type="button" onClick={() => setGroups((current) => [...current, createEmptyGroup(current.length)])}>
+                      Agregar grupo
+                    </Button>
+                  </div>
+
+                  {groups.map((group, groupIndex) => (
+                    <div key={`${group.sortOrder}-${groupIndex}`} className="space-y-4 rounded-2xl border border-border/70 p-4">
+                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                        <div className="grid flex-1 gap-3 md:grid-cols-2">
+                          <div className="space-y-2 md:col-span-2">
+                            <Label>Nombre del grupo</Label>
+                            <Input
+                              value={group.name}
+                              onChange={(event) => setGroups((current) => current.map((entry, currentIndex) => currentIndex === groupIndex ? { ...entry, name: event.target.value } : entry))}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Tipo</Label>
+                            <select
+                              value={group.type}
+                              onChange={(event) => {
+                                const nextType = event.target.value as "MANDATORY" | "ELIGIBLE"
+                                setGroups((current) => current.map((entry, currentIndex) => currentIndex === groupIndex
+                                  ? {
+                                      ...entry,
+                                      type: nextType,
+                                      requiredQuantity: nextType === "MANDATORY"
+                                        ? entry.options.length
+                                        : Math.min(Math.max(1, entry.requiredQuantity), entry.options.length),
+                                    }
+                                  : entry))
+                              }}
+                              className="h-11 w-full rounded-md border border-input bg-background px-3"
+                            >
+                              <option value="MANDATORY">MANDATORY</option>
+                              <option value="ELIGIBLE">ELIGIBLE</option>
+                            </select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Cantidad requerida</Label>
+                            <Input
+                              type="number"
+                              min="1"
+                              max={String(Math.max(1, group.options.length))}
+                              disabled={group.type === "MANDATORY"}
+                              value={group.type === "MANDATORY" ? group.options.length : group.requiredQuantity}
+                              onChange={(event) => setGroups((current) => current.map((entry, currentIndex) => currentIndex === groupIndex
+                                ? {
+                                    ...entry,
+                                    requiredQuantity: Math.min(entry.options.length, Math.max(1, Number(event.target.value) || 1)),
+                                  }
+                                : entry))}
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              {group.type === "MANDATORY"
+                                ? "Los grupos obligatorios incluyen todas sus opciones."
+                                : `Elegí hasta ${group.options.length} opción${group.options.length === 1 ? "" : "es"}.`}
+                            </p>
+                          </div>
+                        </div>
+                        <Button variant="outline" type="button" onClick={() => setGroups((current) => current.filter((_, currentIndex) => currentIndex !== groupIndex))} disabled={groups.length <= 1}>
+                          Quitar grupo
+                        </Button>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            <Label>Opciones</Label>
+                            <Badge variant={group.type === "MANDATORY" ? "secondary" : "info"}>{formatGroupTypeLabel(group.type)}</Badge>
+                          </div>
+                          <Button
+                            variant="outline"
+                            type="button"
+                            size="sm"
+                            onClick={() => setGroups((current) => current.map((entry, currentIndex) => currentIndex === groupIndex
+                              ? {
+                                  ...entry,
+                                  options: [...entry.options, createEmptyOption(entry.options.length)],
+                                  requiredQuantity: entry.type === "MANDATORY"
+                                    ? entry.options.length + 1
+                                    : Math.min(entry.options.length + 1, entry.requiredQuantity),
+                                }
+                              : entry))}
+                          >
+                            Agregar opción
+                          </Button>
+                        </div>
+
+                        {group.options.map((option, optionIndex) => (
+                          <div key={`${groupIndex}-${optionIndex}`} className="grid gap-3 md:grid-cols-[minmax(0,1fr)_110px_110px]">
+                            <select
+                              value={option.productId}
+                              onChange={(event) => setGroups((current) => current.map((entry, currentIndex) => currentIndex === groupIndex
+                                ? {
+                                    ...entry,
+                                    options: entry.options.map((currentOption, currentOptionIndex) => currentOptionIndex === optionIndex ? { ...currentOption, productId: event.target.value } : currentOption),
+                                  }
+                                : entry))}
+                              className="h-11 rounded-md border border-input bg-background px-3"
+                            >
+                              <option value="">Seleccionar producto</option>
+                              {products.map((product) => (
+                                <option key={product.id} value={product.id}>{product.name} (ID {product.productNumber})</option>
+                              ))}
+                            </select>
+                            <Input
+                              type="number"
+                              min="1"
+                              value={option.quantity}
+                              onChange={(event) => setGroups((current) => current.map((entry, currentIndex) => currentIndex === groupIndex
+                                ? {
+                                    ...entry,
+                                    options: entry.options.map((currentOption, currentOptionIndex) => currentOptionIndex === optionIndex ? { ...currentOption, quantity: Math.max(1, Number(event.target.value) || 1) } : currentOption),
+                                  }
+                                : entry))}
+                            />
+                            <Button
+                              variant="outline"
+                              type="button"
+                              onClick={() => setGroups((current) => current.map((entry, currentIndex) => {
+                                if (currentIndex !== groupIndex) return entry
+                                const nextOptions = entry.options.filter((_, currentOptionIndex) => currentOptionIndex !== optionIndex)
+                                return {
+                                  ...entry,
+                                  options: nextOptions.length ? nextOptions : [createEmptyOption(0)],
+                                  requiredQuantity: entry.type === "MANDATORY"
+                                    ? Math.max(1, nextOptions.length || 1)
+                                    : Math.min(Math.max(1, entry.requiredQuantity), Math.max(1, nextOptions.length || 1)),
+                                }
+                              }))}
+                              disabled={group.options.length <= 1}
+                            >
+                              Quitar
+                            </Button>
+                          </div>
                         ))}
-                      </select>
-                      <Input
-                        type="number"
-                        min="1"
-                        value={item.quantity}
-                        onChange={(event) => setComboItems((current) => current.map((entry, currentIndex) => currentIndex === index ? { ...entry, quantity: Number(event.target.value) || 1 } : entry))}
-                      />
-                      <Button variant="outline" type="button" onClick={() => setComboItems((current) => current.filter((_, currentIndex) => currentIndex !== index))} disabled={comboItems.length <= 2}>Quitar</Button>
+                      </div>
                     </div>
                   ))}
-                  <Button variant="outline" type="button" onClick={() => setComboItems((current) => [...current, { productId: "", quantity: 1 }])}>Agregar producto</Button>
                 </div>
               </>
             ) : (
               <>
                 <div className="space-y-2">
                   <Label>Producto base</Label>
-                  <select value={scaleProductId} onChange={(event) => setScaleProductId(event.target.value)} className="w-full h-11 rounded-md border border-input bg-background px-3">
+                  <select value={scaleProductId} onChange={(event) => setScaleProductId(event.target.value)} className="h-11 w-full rounded-md border border-input bg-background px-3">
                     <option value="">Seleccionar producto</option>
                     {products.map((product) => (
                       <option key={product.id} value={product.id}>{product.name} (ID {product.productNumber})</option>
@@ -360,8 +607,10 @@ export default function PromotionsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Promociones configuradas</CardTitle>
-            <CardDescription>{promotions.length} promociones registradas.</CardDescription>
+            <div>
+              <CardTitle>Promociones configuradas</CardTitle>
+              <CardDescription>{promotions.length} promociones registradas.</CardDescription>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             {promotions.length === 0 ? (
@@ -383,17 +632,24 @@ export default function PromotionsPage() {
                 </div>
 
                 {promotion.type === "COMBO" ? (
-                  <div className="mt-3 space-y-2 text-sm text-muted-foreground">
-                    <p>
-                      {promotion.comboPrice != null
-                        ? `Precio combo: $${promotion.comboPrice}`
-                        : promotion.discountPercent != null
-                          ? `Descuento: ${promotion.discountPercent}%`
-                          : `Descuento fijo: $${promotion.discountAmount || 0}`}
-                    </p>
-                    {promotion.comboItems.map((item) => (
-                      <p key={item.id}>· {item.product.name} × {item.quantity}</p>
-                    ))}
+                  <div className="mt-3 space-y-3 text-sm text-muted-foreground">
+                    <p>{formatComboSummary(promotion)}</p>
+                    <div className="space-y-2">
+                      {promotion.groups.map((group) => (
+                        <div key={group.id} className="rounded-xl border border-border/60 bg-muted/20 p-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-medium text-foreground">{group.name}</p>
+                            <Badge variant={group.type === "MANDATORY" ? "secondary" : "info"}>{formatGroupTypeLabel(group.type)}</Badge>
+                            <span>Requeridas: {group.type === "MANDATORY" ? group.options.length : group.requiredQuantity}</span>
+                          </div>
+                          <div className="mt-2 space-y-1">
+                            {group.options.map((option) => (
+                              <p key={option.id}>· {option.product.name} × {option.quantity}</p>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ) : (
                   <div className="mt-3 space-y-2 text-sm text-muted-foreground">

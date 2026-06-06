@@ -15,6 +15,45 @@ const comboItemSchema = z.object({
   quantity: z.number().int().positive(),
 })
 
+const groupOptionSchema = z.object({
+  productId: z.string().min(1),
+  quantity: z.number().int().positive(),
+})
+
+const promotionGroupSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    type: z.enum(["MANDATORY", "ELIGIBLE"]),
+    requiredQuantity: z.number().int().positive(),
+    options: z.array(groupOptionSchema).min(1, "Cada grupo necesita al menos una opción"),
+  })
+  .superRefine((group, ctx) => {
+    const optionIds = group.options.map((option) => option.productId)
+    if (new Set(optionIds).size !== optionIds.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "No repitas productos dentro del mismo grupo",
+      })
+    }
+
+    if (group.type === "ELIGIBLE") {
+      if (group.requiredQuantity < 1 || group.requiredQuantity > group.options.length) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "En grupos elegibles la cantidad requerida debe estar entre 1 y la cantidad de opciones",
+        })
+      }
+      return
+    }
+
+    if (group.requiredQuantity !== group.options.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "En grupos obligatorios la cantidad requerida debe coincidir con todas las opciones",
+      })
+    }
+  })
+
 const scaleTierSchema = z
   .object({
     minimumQuantity: z.number().int().positive(),
@@ -42,11 +81,44 @@ const comboPromotionBaseSchema = z.object({
   comboPrice: z.number().positive().optional(),
   discountPercent: z.number().min(0).max(100).optional(),
   discountAmount: z.number().min(0).optional(),
-  comboItems: z.array(comboItemSchema).min(2, "El combo necesita al menos 2 productos"),
+  groups: z.array(promotionGroupSchema).min(1, "El combo necesita al menos un grupo").optional(),
+  comboItems: z.array(comboItemSchema).optional(),
 })
+
+function normalizeComboGroups(
+  promotion: z.infer<typeof comboPromotionBaseSchema>
+): Array<z.infer<typeof promotionGroupSchema>> {
+  if (promotion.groups?.length) {
+    return promotion.groups
+  }
+
+  if (promotion.comboItems?.length) {
+    return [{
+      name: "Grupo obligatorio",
+      type: "MANDATORY",
+      requiredQuantity: promotion.comboItems.length,
+      options: promotion.comboItems.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+      })),
+    }]
+  }
+
+  return []
+}
 
 const comboPromotionSchema = comboPromotionBaseSchema
   .superRefine((promotion, ctx) => {
+    const normalizedGroups = normalizeComboGroups(promotion)
+
+    if (!normalizedGroups.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "El combo necesita al menos un grupo",
+        path: ["groups"],
+      })
+    }
+
     const hasPrice = (promotion.comboPrice || 0) > 0
     const hasPercent = (promotion.discountPercent || 0) > 0
     const hasAmount = (promotion.discountAmount || 0) > 0
@@ -56,14 +128,6 @@ const comboPromotionSchema = comboPromotionBaseSchema
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "El combo debe tener una única estrategia de descuento: precio, porcentaje o monto fijo",
-      })
-    }
-
-    const productIds = promotion.comboItems.map((item) => item.productId)
-    if (new Set(productIds).size !== productIds.length) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "No repitas productos dentro del combo",
       })
     }
   })
@@ -106,6 +170,12 @@ function mapPromotionRecord(promotion: any) {
     comboPrice: promotion.comboPrice ? Number(promotion.comboPrice) : null,
     discountPercent: promotion.discountPercent ? Number(promotion.discountPercent) : null,
     discountAmount: promotion.discountAmount ? Number(promotion.discountAmount) : null,
+    groups: (promotion.groups || []).map((group: any) => ({
+      ...group,
+      options: (group.options || []).map((option: any) => ({
+        ...option,
+      })),
+    })),
     tiers: promotion.tiers.map((tier: any) => ({
       ...tier,
       discountPercent: tier.discountPercent ? Number(tier.discountPercent) : null,
@@ -122,7 +192,14 @@ function buildPromotionMutationData(parsed: PromotionInput) {
   }
 
   if (parsed.type === "COMBO") {
-    const uniqueProducts = Array.from(new Set(parsed.comboItems.map((item: z.infer<typeof comboItemSchema>) => item.productId)))
+    const groups = normalizeComboGroups(parsed)
+    const uniqueProducts = Array.from(
+      new Set(
+        groups.flatMap((group: z.infer<typeof promotionGroupSchema>) =>
+          group.options.map((option) => option.productId)
+        )
+      )
+    )
 
     return {
       ...commonData,
@@ -133,11 +210,23 @@ function buildPromotionMutationData(parsed: PromotionInput) {
       products: {
         create: uniqueProducts.map((productId) => ({ productId })),
       },
-      comboItems: {
-        create: parsed.comboItems.map((item: z.infer<typeof comboItemSchema>) => ({
-          productId: item.productId,
-          quantity: item.quantity,
+      groups: {
+        create: groups.map((group: z.infer<typeof promotionGroupSchema>, groupIndex: number) => ({
+          name: group.name,
+          type: group.type,
+          requiredQuantity: group.requiredQuantity,
+          sortOrder: groupIndex,
+          options: {
+            create: group.options.map((option, optionIndex) => ({
+              productId: option.productId,
+              quantity: option.quantity,
+              sortOrder: optionIndex,
+            })),
+          },
         })),
+      },
+      comboItems: {
+        create: [],
       },
       tiers: {
         create: [],
@@ -153,6 +242,9 @@ function buildPromotionMutationData(parsed: PromotionInput) {
     discountAmount: null,
     products: {
       create: [{ productId: parsed.productId }],
+    },
+    groups: {
+      create: [],
     },
     comboItems: {
       create: [],
@@ -199,6 +291,23 @@ export async function getPromotions() {
             },
           },
         },
+      },
+      groups: {
+        include: {
+          options: {
+            include: {
+              product: {
+                select: {
+                  id: true,
+                  productNumber: true,
+                  name: true,
+                },
+              },
+            },
+            orderBy: { sortOrder: "asc" },
+          },
+        },
+        orderBy: { sortOrder: "asc" },
       },
       tiers: {
         include: {
@@ -268,6 +377,10 @@ export async function updatePromotion(id: string, input: unknown) {
         products: {
           deleteMany: {},
           create: mutationData.products.create,
+        },
+        groups: {
+          deleteMany: {},
+          create: mutationData.groups.create,
         },
         comboItems: {
           deleteMany: {},

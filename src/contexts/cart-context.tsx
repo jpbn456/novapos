@@ -20,6 +20,7 @@ function loadCartFromStorage(): CartItem[] {
 interface CartContextType {
   items: CartItem[]
   addItem: (product: { id: string; name: string; price: number; sku?: string | null; barcode?: string | null; unitOfMeasure?: CartItem["unitOfMeasure"]; customUnitName?: string | null }) => void
+  addItems: (products: Array<{ productId: string; name: string; price: number; quantity: number; sku?: string | null; barcode?: string | null; unitOfMeasure?: CartItem["unitOfMeasure"]; customUnitName?: string | null }>) => void
   removeItem: (productId: string) => void
   updateQuantity: (productId: string, quantity: number) => void
   clearCart: () => void
@@ -32,6 +33,44 @@ const CartContext = createContext<CartContextType | undefined>(undefined)
 export function CartProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([])
   const [hydrated, setHydrated] = useState(false)
+
+  function mergeCartItems(
+    previousItems: CartItem[],
+    incomingItems: Array<{ productId: string; name: string; price: number; quantity: number; sku?: string | null; barcode?: string | null; unitOfMeasure?: CartItem["unitOfMeasure"]; customUnitName?: string | null }>
+  ) {
+    const nextItems = [...previousItems]
+
+    for (const incomingItem of incomingItems) {
+      const normalizedQuantity = roundQuantity(incomingItem.quantity)
+      if (normalizedQuantity <= 0) continue
+
+      const existingIndex = nextItems.findIndex((item) => item.productId === incomingItem.productId)
+
+      if (existingIndex >= 0) {
+        const updatedQuantity = roundQuantity(nextItems[existingIndex].quantity + normalizedQuantity)
+        nextItems[existingIndex] = {
+          ...nextItems[existingIndex],
+          quantity: updatedQuantity,
+          subtotal: roundQuantity(updatedQuantity * nextItems[existingIndex].price),
+        }
+        continue
+      }
+
+      nextItems.push({
+        productId: incomingItem.productId,
+        name: incomingItem.name,
+        price: incomingItem.price,
+        quantity: normalizedQuantity,
+        subtotal: roundQuantity(normalizedQuantity * incomingItem.price),
+        unitOfMeasure: incomingItem.unitOfMeasure,
+        customUnitName: incomingItem.customUnitName || null,
+        sku: incomingItem.sku,
+        barcode: incomingItem.barcode,
+      })
+    }
+
+    return nextItems
+  }
 
   useEffect(() => {
     setItems(loadCartFromStorage())
@@ -49,30 +88,22 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }, [items, hydrated])
 
   function addItem(product: { id: string; name: string; price: number; sku?: string | null; barcode?: string | null; unitOfMeasure?: CartItem["unitOfMeasure"]; customUnitName?: string | null }) {
-    setItems((prev) => {
-      const existing = prev.find((item) => item.productId === product.id)
-      if (existing) {
-        return prev.map((item) =>
-          item.productId === product.id
-            ? { ...item, quantity: roundQuantity(item.quantity + 1), subtotal: roundQuantity(item.quantity + 1) * item.price }
-            : item
-        )
-      }
-      return [
-        ...prev,
-        {
-          productId: product.id,
-          name: product.name,
-          price: product.price,
-          quantity: 1,
-          subtotal: product.price,
-          unitOfMeasure: product.unitOfMeasure,
-          customUnitName: product.customUnitName || null,
-          sku: product.sku,
-          barcode: product.barcode,
-        },
-      ]
-    })
+    addItems([
+      {
+        productId: product.id,
+        name: product.name,
+        price: product.price,
+        quantity: 1,
+        unitOfMeasure: product.unitOfMeasure,
+        customUnitName: product.customUnitName,
+        sku: product.sku,
+        barcode: product.barcode,
+      },
+    ])
+  }
+
+  function addItems(products: Array<{ productId: string; name: string; price: number; quantity: number; sku?: string | null; barcode?: string | null; unitOfMeasure?: CartItem["unitOfMeasure"]; customUnitName?: string | null }>) {
+    setItems((prev) => mergeCartItems(prev, products))
   }
 
   function removeItem(productId: string) {
@@ -112,6 +143,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       value={{
         items,
         addItem,
+        addItems,
         removeItem,
         updateQuantity,
         clearCart,
