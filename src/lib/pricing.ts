@@ -1,3 +1,5 @@
+import type { ForcedPromotionSelection } from "@/types/auth"
+
 export type PromotionPricingInput = {
   id: string
   name: string
@@ -61,6 +63,10 @@ export type PricingResult = {
   total: number
   savings: number
   appliedPromotions: AppliedPromotionSummary[]
+}
+
+type PricingOptions = {
+  forcedPromotions?: ForcedPromotionSelection[]
 }
 
 function roundCurrency(value: number) {
@@ -154,6 +160,123 @@ function calculateBundleDiscount(
   return 0
 }
 
+function buildSelectionCandidate(
+  promotion: PromotionPricingInput,
+  selectedGroups: Array<Array<{ productId: string; quantity: number }>>,
+  lineMap: Map<string, {
+    productId: string
+    quantity: number
+    baseUnitPrice: number
+  }>,
+  consumedForCombos: Map<string, number>
+): ResolvedComboSelection | null {
+  const aggregatedRequirements = new Map<string, number>()
+  let bundleBaseTotal = 0
+
+  for (const selectedOptions of selectedGroups) {
+    for (const option of selectedOptions) {
+      const line = lineMap.get(option.productId)
+      if (!line) return null
+
+      const availableQuantity = line.quantity - (consumedForCombos.get(option.productId) || 0)
+      if (availableQuantity < option.quantity) return null
+
+      aggregatedRequirements.set(
+        option.productId,
+        (aggregatedRequirements.get(option.productId) || 0) + option.quantity
+      )
+      bundleBaseTotal += line.baseUnitPrice * option.quantity
+    }
+  }
+
+  let bundleCount = Number.POSITIVE_INFINITY
+  for (const [productId, requiredQuantity] of aggregatedRequirements) {
+    const line = lineMap.get(productId)
+    if (!line) return null
+
+    const availableQuantity = line.quantity - (consumedForCombos.get(productId) || 0)
+    bundleCount = Math.min(bundleCount, Math.floor(availableQuantity / requiredQuantity))
+  }
+
+  if (!Number.isFinite(bundleCount) || bundleCount <= 0) return null
+
+  const normalizedBundleBaseTotal = roundCurrency(bundleBaseTotal)
+  const bundleDiscount = calculateBundleDiscount(promotion, normalizedBundleBaseTotal)
+  if (bundleDiscount <= 0) return null
+
+  return {
+    bundleCount,
+    bundleBaseTotal: normalizedBundleBaseTotal,
+    totalDiscount: roundCurrency(bundleDiscount * bundleCount),
+    selectedOptions: selectedGroups.flat(),
+  }
+}
+
+function resolveForcedComboSelection(
+  promotion: PromotionPricingInput,
+  forcedPromotion: ForcedPromotionSelection,
+  lineMap: Map<string, {
+    productId: string
+    quantity: number
+    baseUnitPrice: number
+  }>,
+  consumedForCombos: Map<string, number>
+): ResolvedComboSelection | null {
+  if (promotion.type !== "COMBO") return null
+
+  if (!promotion.groups?.length) {
+    if (!promotion.comboItems?.length) return null
+
+    return buildSelectionCandidate(
+      promotion,
+      [promotion.comboItems.map((item) => ({ productId: item.productId, quantity: item.quantity }))],
+      lineMap,
+      consumedForCombos
+    )
+  }
+
+  const selectedGroups: Array<Array<{ productId: string; quantity: number }>> = []
+
+  for (const [groupIndex, group] of promotion.groups.entries()) {
+    const forcedGroup = forcedPromotion.groups.find((entry) =>
+      (entry.groupId && group.id ? entry.groupId === group.id : false)
+    ) || forcedPromotion.groups[groupIndex]
+
+    if (!forcedGroup) return null
+
+    if (group.type === "OBLIGATORIO") {
+      const expectedIds = group.options.map((option) => option.productId).sort()
+      const forcedIds = [...forcedGroup.optionProductIds].sort()
+      if (expectedIds.length !== forcedIds.length || expectedIds.some((productId, index) => productId !== forcedIds[index])) {
+        return null
+      }
+
+      selectedGroups.push(group.options.map((option) => ({
+        productId: option.productId,
+        quantity: option.quantity,
+      })))
+      continue
+    }
+
+    const selectedIdSet = new Set(forcedGroup.optionProductIds)
+    if (selectedIdSet.size !== group.requiredQuantity || forcedGroup.optionProductIds.length !== group.requiredQuantity) {
+      return null
+    }
+
+    const selectedOptions = group.options.filter((option) => selectedIdSet.has(option.productId))
+    if (selectedOptions.length !== group.requiredQuantity) {
+      return null
+    }
+
+    selectedGroups.push(selectedOptions.map((option) => ({
+      productId: option.productId,
+      quantity: option.quantity,
+    })))
+  }
+
+  return buildSelectionCandidate(promotion, selectedGroups, lineMap, consumedForCombos)
+}
+
 function resolveBestComboSelection(
   promotion: PromotionPricingInput,
   lineMap: Map<string, {
@@ -183,49 +306,8 @@ function resolveBestComboSelection(
   let bestSelection: ResolvedComboSelection | null = null
 
   function evaluateSelection(selectedGroups: Array<Array<{ productId: string; quantity: number }>>) {
-    const aggregatedRequirements = new Map<string, number>()
-    let bundleBaseTotal = 0
-
-    for (const selectedOptions of selectedGroups) {
-      for (const option of selectedOptions) {
-        const line = lineMap.get(option.productId)
-        if (!line) return
-
-        const availableQuantity = line.quantity - (consumedForCombos.get(option.productId) || 0)
-        if (availableQuantity < option.quantity) return
-
-        aggregatedRequirements.set(
-          option.productId,
-          (aggregatedRequirements.get(option.productId) || 0) + option.quantity
-        )
-        bundleBaseTotal += line.baseUnitPrice * option.quantity
-      }
-    }
-
-    let bundleCount = Number.POSITIVE_INFINITY
-    for (const [productId, requiredQuantity] of aggregatedRequirements) {
-      const line = lineMap.get(productId)
-      if (!line) return
-
-      const availableQuantity = line.quantity - (consumedForCombos.get(productId) || 0)
-      bundleCount = Math.min(bundleCount, Math.floor(availableQuantity / requiredQuantity))
-    }
-
-    if (!Number.isFinite(bundleCount) || bundleCount <= 0) return
-
-    const normalizedBundleBaseTotal = roundCurrency(bundleBaseTotal)
-    const bundleDiscount = calculateBundleDiscount(promotion, normalizedBundleBaseTotal)
-    if (bundleDiscount <= 0) return
-
-    const totalDiscount = roundCurrency(bundleDiscount * bundleCount)
-    const selectedOptions = selectedGroups.flat()
-
-    const candidate: ResolvedComboSelection = {
-      bundleCount,
-      bundleBaseTotal: normalizedBundleBaseTotal,
-      totalDiscount,
-      selectedOptions,
-    }
+    const candidate = buildSelectionCandidate(promotion, selectedGroups, lineMap, consumedForCombos)
+    if (!candidate) return
 
     if (
       !bestSelection ||
@@ -307,7 +389,8 @@ function allocateComboDiscount(
 
 export function calculatePromotionalPricing(
   items: PricingItemInput[],
-  promotions: PromotionPricingInput[]
+  promotions: PromotionPricingInput[],
+  options: PricingOptions = {}
 ): PricingResult {
   const baseLines = items.map((item) => ({
     productId: item.productId,
@@ -323,18 +406,49 @@ export function calculatePromotionalPricing(
   const consumedForCombos = new Map<string, number>()
   const appliedPromotions: AppliedPromotionSummary[] = []
 
-  const comboPromotions = promotions.filter((promotion) => promotion.type === "COMBO")
-  for (const promotion of comboPromotions) {
-    const selection = resolveBestComboSelection(promotion, lineMap, consumedForCombos)
+  const promotionsById = new Map(promotions.map((promotion) => [promotion.id, promotion]))
+  for (const forcedPromotion of options.forcedPromotions || []) {
+    const promotion = promotionsById.get(forcedPromotion.promotionId)
+    if (!promotion || promotion.type !== "COMBO") continue
+
+    const selection = resolveForcedComboSelection(promotion, forcedPromotion, lineMap, consumedForCombos)
     if (!selection) continue
 
     allocateComboDiscount(lineMap, consumedForCombos, promotion, selection)
-
     appliedPromotions.push({
       promotionId: promotion.id,
       promotionName: promotion.name,
       type: "COMBO",
       discount: selection.totalDiscount,
+    })
+  }
+
+  const comboPromotions = promotions.filter((promotion) => promotion.type === "COMBO")
+  while (comboPromotions.length > 0) {
+    let bestComboCandidate: { promotion: PromotionPricingInput; selection: ResolvedComboSelection } | null = null
+
+    for (const promotion of comboPromotions) {
+      const selection = resolveBestComboSelection(promotion, lineMap, consumedForCombos)
+      if (!selection) continue
+
+      if (
+        !bestComboCandidate ||
+        selection.totalDiscount > bestComboCandidate.selection.totalDiscount ||
+        (selection.totalDiscount === bestComboCandidate.selection.totalDiscount && selection.bundleBaseTotal < bestComboCandidate.selection.bundleBaseTotal)
+      ) {
+        bestComboCandidate = { promotion, selection }
+      }
+    }
+
+    if (!bestComboCandidate) break
+
+    allocateComboDiscount(lineMap, consumedForCombos, bestComboCandidate.promotion, bestComboCandidate.selection)
+
+    appliedPromotions.push({
+      promotionId: bestComboCandidate.promotion.id,
+      promotionName: bestComboCandidate.promotion.name,
+      type: "COMBO",
+      discount: bestComboCandidate.selection.totalDiscount,
     })
   }
 

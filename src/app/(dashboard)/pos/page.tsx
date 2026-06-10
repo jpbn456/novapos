@@ -6,6 +6,7 @@ import {
   Banknote,
   CheckCircle2,
   CreditCard,
+  FileDown,
   Loader2,
   Minus,
   Plus,
@@ -51,6 +52,8 @@ import {
 import { CartProvider, useCart } from "@/contexts/cart-context"
 import { calculatePromotionalPricing, type PromotionPricingInput } from "@/lib/pricing"
 import { formatQuantity, getQuantityStep, getUnitLabel, type UnitOfMeasureValue } from "@/lib/quantity"
+import { exportSalePDF } from "@/lib/reports/pdf-export"
+import { type ForcedPromotionSelection } from "@/types/auth"
 
 interface Location {
   id: string
@@ -230,10 +233,38 @@ export function buildPromotionCartItems(
   return { items }
 }
 
+export function buildForcedPromotionSelection(
+  promotion: POSPromotion,
+  selections: Record<string, string[]>
+): ForcedPromotionSelection {
+  return {
+    id: `${promotion.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    promotionId: promotion.id,
+    promotionName: promotion.name,
+    type: "COMBO",
+    groups: (promotion.groups || []).map((group, groupIndex) => ({
+      groupId: group.id,
+      optionProductIds: group.type === "OBLIGATORIO"
+        ? group.options.map((option) => option.productId)
+        : selections[getGroupKey(promotion.id, group, groupIndex)] || [],
+    })),
+  }
+}
+
 function POSContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { items, addItem, addItems, removeItem, updateQuantity, clearCart, getItemCount } = useCart()
+  const {
+    items,
+    forcedPromotions,
+    addItem,
+    addItems,
+    addForcedPromotion,
+    removeItem,
+    updateQuantity,
+    clearCart,
+    getItemCount,
+  } = useCart()
 
   const [locations, setLocations] = useState<Location[]>([])
   const [cashSessions, setCashSessions] = useState<CashSessionOption[]>([])
@@ -339,8 +370,9 @@ function POSContent() {
       unitPrice: item.price,
       name: item.name,
     })),
-    promotions
-  ), [items, promotions])
+    promotions,
+    { forcedPromotions }
+  ), [forcedPromotions, items, promotions])
 
   function closePromotionModal() {
     setSelectedPromotion(null)
@@ -397,6 +429,7 @@ function POSContent() {
       }
 
       addItems(result.items)
+      addForcedPromotion(buildForcedPromotionSelection(promotion, {}))
       setPromoFeedback(`Se agregó ${promotion.name} al carrito.`)
       return
     }
@@ -422,6 +455,7 @@ function POSContent() {
     }
 
     addItems(result.items)
+    addForcedPromotion(buildForcedPromotionSelection(selectedPromotion, promoSelections))
     setPromoFeedback(`Se agregó ${selectedPromotion.name} al carrito.`)
     closePromotionModal()
   }
@@ -448,6 +482,7 @@ function POSContent() {
       locationId,
       cashSessionId,
       paymentMethod,
+      forcedPromotions,
       items: pricing.lines.map((line) => ({
         productId: line.productId,
         quantity: line.quantity,
@@ -496,6 +531,31 @@ function POSContent() {
             <p className="text-center text-sm text-muted-foreground">
               {saleComplete.location.name} · {saleComplete.user.name}
             </p>
+
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => exportSalePDF({
+                invoiceNumber: saleComplete.invoiceNumber,
+                date: new Date().toLocaleDateString("es-AR"),
+                location: saleComplete.location.name,
+                cashier: saleComplete.user.name || saleComplete.user.email || "Usuario",
+                paymentMethod,
+                status: "COMPLETED",
+                total: saleComplete.total,
+                tax: saleComplete.tax || 0,
+                items: saleComplete.items.map((item: any) => ({
+                  id: item.id,
+                  product: item.product.name,
+                  quantity: item.quantity,
+                  unitPrice: item.unitPrice,
+                  subtotal: item.subtotal,
+                })),
+              })}
+            >
+              <FileDown className="h-4 w-4" />
+              Descargar PDF
+            </Button>
 
             <Button
               className="w-full"

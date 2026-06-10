@@ -5,8 +5,10 @@ import { useEffect, useMemo, useState } from "react"
 import { getCashSessions } from "@/app/actions/cash"
 import { getLocations } from "@/app/actions/locations"
 import { PageHeader, StatCard } from "@/components/dashboard/page-primitives"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Banknote, Receipt, Scale, Wallet } from "lucide-react"
+import { exportCashSessionPDF } from "@/lib/reports/pdf-export"
+import { Banknote, FileDown, Receipt, Scale, Wallet } from "lucide-react"
 
 type Location = {
   id: string
@@ -170,10 +172,47 @@ export default function CashMovementsPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Resumen de la sesión</CardTitle>
-                <CardDescription>
-                  {selectedSession.registerLabel} · abierta {formatDate(selectedSession.openedAt)} · cerrada {formatDate(selectedSession.closedAt)}
-                </CardDescription>
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <CardTitle>Resumen de la sesión</CardTitle>
+                    <CardDescription>
+                      {selectedSession.registerLabel} · abierta {formatDate(selectedSession.openedAt)} · cerrada {formatDate(selectedSession.closedAt)}
+                    </CardDescription>
+                  </div>
+                  <Button
+                    variant="outline"
+                    onClick={() => exportCashSessionPDF({
+                      registerLabel: selectedSession.registerLabel,
+                      locationName: selectedSession.locationName,
+                      shiftLabel: selectedSession.shiftLabel,
+                      status: selectedSession.status,
+                      businessDate: formatDate(selectedSession.businessDate),
+                      openedAt: formatDate(selectedSession.openedAt),
+                      closedAt: selectedSession.closedAt ? formatDate(selectedSession.closedAt) : null,
+                      openingCashAmount: selectedSession.openingCashAmount,
+                      expectedCashAmount: selectedSession.expectedCashAmount,
+                      countedCashAmount: selectedSession.countedCashAmount,
+                      differenceAmount: selectedSession.differenceAmount,
+                      totalRaised: selectedSession.totalRaised,
+                      salesCount: selectedSession.salesCount,
+                      externalCashIncome: selectedSession.externalCashIncome,
+                      externalCashExpense: selectedSession.externalCashExpense,
+                      salesBreakdown: selectedSession.salesBreakdown,
+                      movementBreakdown: selectedSession.movementBreakdown,
+                      sales: selectedSession.sales.map((sale) => ({
+                        ...sale,
+                        createdAt: formatDate(sale.createdAt),
+                      })),
+                      movements: selectedSession.movements.map((movement) => ({
+                        ...movement,
+                        createdAt: formatDate(movement.createdAt),
+                      })),
+                    })}
+                  >
+                    <FileDown className="h-4 w-4" />
+                    PDF
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent className="grid gap-6 xl:grid-cols-2">
                 <div className="space-y-3 text-sm">

@@ -1,26 +1,88 @@
 "use client"
 
 import { createContext, useContext, useEffect, useState, ReactNode } from "react"
-import { CartItem } from "@/types/auth"
+import { CartItem, ForcedPromotionSelection } from "@/types/auth"
 import { roundQuantity } from "@/lib/quantity"
 
 const CART_STORAGE_KEY = "novapos-cart"
 
-function loadCartFromStorage(): CartItem[] {
-  if (typeof window === "undefined") return []
+type StoredCartState = {
+  items: CartItem[]
+  forcedPromotions: ForcedPromotionSelection[]
+}
+
+function buildPromotionRequirementMap(forcedPromotions: ForcedPromotionSelection[]) {
+  return forcedPromotions.map((promotion) => {
+    const requirements = new Map<string, number>()
+
+    for (const group of promotion.groups) {
+      for (const productId of group.optionProductIds) {
+        requirements.set(productId, (requirements.get(productId) || 0) + 1)
+      }
+    }
+
+    return {
+      promotion,
+      requirements,
+    }
+  })
+}
+
+function sanitizeForcedPromotions(items: CartItem[], forcedPromotions: ForcedPromotionSelection[]) {
+  if (forcedPromotions.length === 0) return forcedPromotions
+
+  const available = new Map<string, number>()
+  for (const item of items) {
+    available.set(item.productId, (available.get(item.productId) || 0) + item.quantity)
+  }
+
+  const kept: ForcedPromotionSelection[] = []
+
+  for (const entry of buildPromotionRequirementMap(forcedPromotions)) {
+    const canKeep = Array.from(entry.requirements.entries()).every(([productId, requiredQuantity]) =>
+      (available.get(productId) || 0) >= requiredQuantity
+    )
+
+    if (!canKeep) continue
+
+    kept.push(entry.promotion)
+    for (const [productId, requiredQuantity] of entry.requirements.entries()) {
+      available.set(productId, (available.get(productId) || 0) - requiredQuantity)
+    }
+  }
+
+  return kept
+}
+
+function loadCartFromStorage(): StoredCartState {
+  if (typeof window === "undefined") return { items: [], forcedPromotions: [] }
 
   try {
     const raw = localStorage.getItem(CART_STORAGE_KEY)
-    return raw ? JSON.parse(raw) : []
+    if (!raw) {
+      return { items: [], forcedPromotions: [] }
+    }
+
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) {
+      return { items: parsed, forcedPromotions: [] }
+    }
+
+    return {
+      items: Array.isArray(parsed?.items) ? parsed.items : [],
+      forcedPromotions: Array.isArray(parsed?.forcedPromotions) ? parsed.forcedPromotions : [],
+    }
   } catch {
-    return []
+    return { items: [], forcedPromotions: [] }
   }
 }
 
 interface CartContextType {
   items: CartItem[]
+  forcedPromotions: ForcedPromotionSelection[]
   addItem: (product: { id: string; name: string; price: number; sku?: string | null; barcode?: string | null; unitOfMeasure?: CartItem["unitOfMeasure"]; customUnitName?: string | null }) => void
   addItems: (products: Array<{ productId: string; name: string; price: number; quantity: number; sku?: string | null; barcode?: string | null; unitOfMeasure?: CartItem["unitOfMeasure"]; customUnitName?: string | null }>) => void
+  addForcedPromotion: (promotion: ForcedPromotionSelection) => void
   removeItem: (productId: string) => void
   updateQuantity: (productId: string, quantity: number) => void
   clearCart: () => void
@@ -32,6 +94,7 @@ const CartContext = createContext<CartContextType | undefined>(undefined)
 
 export function CartProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([])
+  const [forcedPromotions, setForcedPromotions] = useState<ForcedPromotionSelection[]>([])
   const [hydrated, setHydrated] = useState(false)
 
   function mergeCartItems(
@@ -73,7 +136,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    setItems(loadCartFromStorage())
+    const stored = loadCartFromStorage()
+    setItems(stored.items)
+    setForcedPromotions(sanitizeForcedPromotions(stored.items, stored.forcedPromotions))
     setHydrated(true)
   }, [])
 
@@ -81,11 +146,11 @@ export function CartProvider({ children }: { children: ReactNode }) {
     if (!hydrated || typeof window === "undefined") return
 
     try {
-      localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(items))
+      localStorage.setItem(CART_STORAGE_KEY, JSON.stringify({ items, forcedPromotions }))
     } catch {
       // Ignore localStorage failures silently
     }
-  }, [items, hydrated])
+  }, [items, forcedPromotions, hydrated])
 
   function addItem(product: { id: string; name: string; price: number; sku?: string | null; barcode?: string | null; unitOfMeasure?: CartItem["unitOfMeasure"]; customUnitName?: string | null }) {
     addItems([
@@ -106,8 +171,16 @@ export function CartProvider({ children }: { children: ReactNode }) {
     setItems((prev) => mergeCartItems(prev, products))
   }
 
+  function addForcedPromotion(promotion: ForcedPromotionSelection) {
+    setForcedPromotions((prev) => [...prev, promotion])
+  }
+
   function removeItem(productId: string) {
-    setItems((prev) => prev.filter((item) => item.productId !== productId))
+    setItems((prev) => {
+      const nextItems = prev.filter((item) => item.productId !== productId)
+      setForcedPromotions((current) => sanitizeForcedPromotions(nextItems, current))
+      return nextItems
+    })
   }
 
   function updateQuantity(productId: string, quantity: number) {
@@ -118,16 +191,21 @@ export function CartProvider({ children }: { children: ReactNode }) {
       return
     }
     setItems((prev) =>
-      prev.map((item) =>
+      {
+        const nextItems = prev.map((item) =>
         item.productId === productId
           ? { ...item, quantity: normalizedQuantity, subtotal: normalizedQuantity * item.price }
           : item
       )
+        setForcedPromotions((current) => sanitizeForcedPromotions(nextItems, current))
+        return nextItems
+      }
     )
   }
 
   function clearCart() {
     setItems([])
+    setForcedPromotions([])
   }
 
   function getTotal() {
@@ -140,13 +218,15 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   return (
     <CartContext.Provider
-      value={{
-        items,
-        addItem,
-        addItems,
-        removeItem,
-        updateQuantity,
-        clearCart,
+        value={{
+          items,
+          forcedPromotions,
+          addItem,
+          addItems,
+          addForcedPromotion,
+          removeItem,
+          updateQuantity,
+          clearCart,
         getTotal,
         getItemCount,
       }}

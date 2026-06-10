@@ -21,6 +21,16 @@ const saleSchema = z.object({
   cashSessionId: z.string().min(1),
   paymentMethod: z.enum(["CASH", "CARD", "TRANSFER", "OTHER"]),
   items: z.array(saleItemSchema).min(1),
+  forcedPromotions: z.array(z.object({
+    id: z.string().min(1),
+    promotionId: z.string().min(1),
+    promotionName: z.string().min(1),
+    type: z.literal("COMBO"),
+    groups: z.array(z.object({
+      groupId: z.string().optional(),
+      optionProductIds: z.array(z.string().min(1)).min(1),
+    })).min(1),
+  })).optional(),
   notes: z.string().optional(),
 })
 
@@ -106,7 +116,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { locationId, cashSessionId, paymentMethod, items, notes } = result.data
+    const { locationId, cashSessionId, paymentMethod, items, forcedPromotions, notes } = result.data
 
     const cashSession = await db.cashSession.findUnique({
       where: { id: cashSessionId },
@@ -139,7 +149,8 @@ export async function POST(request: NextRequest) {
         quantity: item.quantity,
         unitPrice: productPriceMap.get(item.productId) ?? Number(item.unitPrice),
       })),
-      activePromotions
+      activePromotions,
+      { forcedPromotions }
     )
 
     // Calculate totals

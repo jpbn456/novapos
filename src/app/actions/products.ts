@@ -11,6 +11,7 @@ import { applyInventoryMovement } from "@/lib/inventory"
 import { roundQuantity } from "@/lib/quantity"
 
 const db = prisma as any
+const PURCHASE_PRODUCT_ROLES = new Set(["ADMIN", "MANAGER"])
 
 type ProductWithCategory = Prisma.ProductGetPayload<{
   include: {
@@ -31,6 +32,16 @@ const productSchema = z.object({
   initialStock: z.coerce.number().min(0).default(0),
   initialLocationId: z.string().optional(),
   categoryId: z.string().optional(),
+})
+
+const purchaseOrderProductSchema = z.object({
+  name: z.string().min(1, "Nombre requerido").max(200),
+  price: z.number().min(0).optional(),
+  cost: z.number().positive("Costo debe ser positivo"),
+  barcode: z.string().max(50).optional(),
+  unitOfMeasure: z.enum(["UNIT", "ML", "G", "KG", "LT", "OTHER"]).default("UNIT"),
+  customUnitName: z.string().max(40).optional(),
+  supplierId: z.string().optional(),
 })
 
 function serializeProduct(p: any): ProductData {
@@ -225,6 +236,78 @@ export async function createProduct(formData: FormData): Promise<ActionResult<Pr
   } catch (error) {
     console.error("Error creating product:", error)
     return { success: false, error: "Error al crear producto" }
+  }
+}
+
+export async function createProductForPurchaseOrder(input: {
+  name: string
+  price?: number
+  cost: number
+  barcode?: string
+  unitOfMeasure?: "UNIT" | "ML" | "G" | "KG" | "LT" | "OTHER"
+  customUnitName?: string
+  supplierId?: string
+}): Promise<ActionResult<ProductData>> {
+  const result = purchaseOrderProductSchema.safeParse(input)
+
+  if (!result.success) {
+    return {
+      success: false,
+      error: result.error.flatten().fieldErrors.name?.[0] || result.error.flatten().fieldErrors.cost?.[0] || "Datos inválidos",
+      fieldErrors: result.error.flatten().fieldErrors,
+    }
+  }
+
+  if (result.data.unitOfMeasure === "OTHER" && !result.data.customUnitName) {
+    return { success: false, error: "Indicá la unidad personalizada" }
+  }
+
+  if (result.data.barcode) {
+    const existingBarcode = await db.product.findUnique({
+      where: { barcode: result.data.barcode },
+    })
+    if (existingBarcode) {
+      return { success: false, error: "Ya existe un producto con ese código de barras" }
+    }
+  }
+
+  try {
+    const session = await auth()
+    if (!session?.user) {
+      return { success: false, error: "No autenticado" }
+    }
+
+    if (!PURCHASE_PRODUCT_ROLES.has((session.user as any).role || "")) {
+      return { success: false, error: "No autorizado" }
+    }
+
+    const product = await db.product.create({
+      data: {
+        name: result.data.name,
+        slug: slugify(result.data.name),
+        price: result.data.price ?? 0,
+        cost: result.data.cost,
+        barcode: result.data.barcode || null,
+        unitOfMeasure: result.data.unitOfMeasure,
+        customUnitName: result.data.unitOfMeasure === "OTHER" ? result.data.customUnitName || null : null,
+        supplierId: result.data.supplierId || null,
+      },
+      include: {
+        category: true,
+      },
+    })
+
+    revalidatePath("/products")
+    revalidatePath("/purchase-orders")
+    return {
+      success: true,
+      data: {
+        ...serializeProduct(product),
+      },
+    }
+  } catch (error) {
+    console.error("Error creating purchase-order product:", error)
+    return { success: false, error: "Error al crear producto para la compra" }
   }
 }
 

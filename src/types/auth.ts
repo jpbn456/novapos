@@ -22,6 +22,19 @@ export interface CartItem {
   barcode?: string | null
 }
 
+export interface ForcedPromotionGroupSelection {
+  groupId?: string
+  optionProductIds: string[]
+}
+
+export interface ForcedPromotionSelection {
+  id: string
+  promotionId: string
+  promotionName: string
+  type: 'COMBO'
+  groups: ForcedPromotionGroupSelection[]
+}
+
 // Generic action result type
 export interface ActionResult<T> {
   success: boolean

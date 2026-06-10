@@ -5,6 +5,7 @@ import {
   type PricingItemInput,
   type PromotionPricingInput,
 } from "./pricing"
+import type { ForcedPromotionSelection } from "@/types/auth"
 
 function buildComboPromotion(
   overrides: Partial<PromotionPricingInput> = {}
@@ -264,5 +265,127 @@ describe("calculatePromotionalPricing with groups", () => {
         expect(line?.savings).toBeCloseTo(savings, 2)
       }
     }
+  })
+
+  test("forced combo selection is applied before automatic promotions", () => {
+    const promotions = [
+      buildComboPromotion({
+        id: "forced-promo",
+        name: "Combo desayuno",
+        comboPrice: 20,
+        groups: [
+          {
+            id: "group-base",
+            type: "OBLIGATORIO",
+            requiredQuantity: 2,
+            options: [
+              { productId: "a", quantity: 1 },
+              { productId: "b", quantity: 1 },
+            ],
+          },
+        ],
+      }),
+      buildComboPromotion({
+        id: "auto-promo",
+        name: "Combo premium",
+        comboPrice: 15,
+        groups: [
+          {
+            id: "group-auto",
+            type: "OBLIGATORIO",
+            requiredQuantity: 2,
+            options: [
+              { productId: "a", quantity: 1 },
+              { productId: "b", quantity: 1 },
+            ],
+          },
+        ],
+      }),
+    ]
+
+    const forcedPromotions: ForcedPromotionSelection[] = [
+      {
+        id: "bundle-1",
+        promotionId: "forced-promo",
+        promotionName: "Combo desayuno",
+        type: "COMBO",
+        groups: [{ groupId: "group-base", optionProductIds: ["a", "b"] }],
+      },
+    ]
+
+    const result = calculatePromotionalPricing(
+      [
+        { productId: "a", quantity: 1, unitPrice: 10 },
+        { productId: "b", quantity: 1, unitPrice: 20 },
+      ],
+      promotions,
+      { forcedPromotions }
+    )
+
+    expect(result.total).toBe(20)
+    expect(result.appliedPromotions).toEqual([
+      expect.objectContaining({ promotionId: "forced-promo", discount: 10 }),
+    ])
+  })
+
+  test("invalid forced combo selection falls back to automatic best promotion", () => {
+    const promotions = [
+      buildComboPromotion({
+        id: "forced-promo",
+        name: "Combo desayuno",
+        comboPrice: 20,
+        groups: [
+          {
+            id: "group-base",
+            type: "OBLIGATORIO",
+            requiredQuantity: 2,
+            options: [
+              { productId: "a", quantity: 1 },
+              { productId: "b", quantity: 1 },
+            ],
+          },
+        ],
+      }),
+      buildComboPromotion({
+        id: "auto-promo",
+        name: "Combo premium",
+        comboPrice: 15,
+        groups: [
+          {
+            id: "group-auto",
+            type: "OBLIGATORIO",
+            requiredQuantity: 2,
+            options: [
+              { productId: "a", quantity: 1 },
+              { productId: "b", quantity: 1 },
+            ],
+          },
+        ],
+      }),
+    ]
+
+    const forcedPromotions: ForcedPromotionSelection[] = [
+      {
+        id: "bundle-1",
+        promotionId: "forced-promo",
+        promotionName: "Combo desayuno",
+        type: "COMBO",
+        groups: [{ groupId: "group-base", optionProductIds: ["a"] }],
+      },
+    ]
+
+    const result = calculatePromotionalPricing(
+      [
+        { productId: "a", quantity: 1, unitPrice: 10 },
+        { productId: "b", quantity: 1, unitPrice: 20 },
+      ],
+      promotions,
+      { forcedPromotions }
+    )
+
+    expect(result.total).toBe(15)
+    expect(result.appliedPromotions).toEqual([
+      expect.objectContaining({ promotionId: "auto-promo", discount: 15 }),
+    ])
   })
 })

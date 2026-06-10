@@ -7,6 +7,7 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
 vi.mock("@/lib/promotion-data", () => ({ getActivePromotionsData: vi.fn() }))
 
 import {
+  buildForcedPromotionSelection,
   buildPromotionCartItems,
   findPromotionProduct,
   formatGroupSummary,
@@ -246,5 +247,56 @@ describe("buildPromotionCartItems", () => {
       expect(result.items).toHaveLength(2)
       expect(result.items[0].productId).toBe("coffee")
     })
+  })
+})
+
+describe("buildForcedPromotionSelection", () => {
+  test("captures all mandatory group options", () => {
+    const promotion = makePromotion({
+      groups: [
+        {
+          id: "group-base",
+          name: "Base",
+          type: "OBLIGATORIO",
+          requiredQuantity: 2,
+          options: [
+            { productId: "coffee", quantity: 1 },
+            { productId: "toast", quantity: 1 },
+          ],
+        },
+      ],
+    })
+
+    const result = buildForcedPromotionSelection(promotion, {})
+
+    expect(result.promotionId).toBe("promo-1")
+    expect(result.groups).toEqual([
+      { groupId: "group-base", optionProductIds: ["coffee", "toast"] },
+    ])
+  })
+
+  test("captures selected eligible options", () => {
+    const promotion = makePromotion({
+      groups: [
+        {
+          id: "group-drink",
+          name: "Bebida",
+          type: "ELEGIBLE",
+          requiredQuantity: 1,
+          options: [
+            { productId: "coffee", quantity: 1 },
+            { productId: "juice", quantity: 1 },
+          ],
+        },
+      ],
+    })
+
+    const result = buildForcedPromotionSelection(promotion, {
+      "group-drink": ["juice"],
+    })
+
+    expect(result.groups).toEqual([
+      { groupId: "group-drink", optionProductIds: ["juice"] },
+    ])
   })
 })

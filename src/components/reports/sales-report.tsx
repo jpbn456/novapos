@@ -15,7 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import type { SalesReportGroup, SalesReportSummary } from "@/lib/types/reports"
-import { exportSalesPDF } from "@/lib/reports/pdf-export"
+import { exportSalePDF, exportSalesPDF } from "@/lib/reports/pdf-export"
 
 interface SalesReportProps {
   data: SalesReportGroup[]
@@ -87,12 +87,13 @@ export default function SalesReport({ data, summary }: SalesReportProps) {
               <TableHead className="text-right">Total</TableHead>
               <TableHead className="hidden sm:table-cell">Método</TableHead>
               <TableHead>Estado</TableHead>
+              <TableHead className="text-right">PDF</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {data.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="py-12 text-center text-muted-foreground">
+                <TableCell colSpan={9} className="py-12 text-center text-muted-foreground">
                   No hay datos de ventas en el período seleccionado.
                 </TableCell>
               </TableRow>
@@ -121,14 +122,26 @@ export default function SalesReport({ data, summary }: SalesReportProps) {
                     <TableCell className="hidden sm:table-cell">
                       <Badge variant={getPaymentVariant(group.paymentMethod)}>{group.paymentMethod}</Badge>
                     </TableCell>
-                    <TableCell>
-                      <Badge variant={getStatusVariant(group.status)}>{group.status}</Badge>
-                    </TableCell>
-                  </TableRow>
-                  {expanded.has(group.invoiceNumber) && (
-                    <TableRow key={`${group.invoiceNumber}-items`}>
-                      <TableCell colSpan={8} className="bg-muted/10 p-0">
-                        <div className="px-10 py-3">
+                     <TableCell>
+                       <Badge variant={getStatusVariant(group.status)}>{group.status}</Badge>
+                     </TableCell>
+                     <TableCell className="text-right">
+                       <Button
+                         variant="outline"
+                         size="sm"
+                         onClick={(event) => {
+                           event.stopPropagation()
+                           exportSalePDF(group)
+                         }}
+                       >
+                         <FileDown className="h-4 w-4" />
+                       </Button>
+                     </TableCell>
+                   </TableRow>
+                   {expanded.has(group.invoiceNumber) && (
+                     <TableRow key={`${group.invoiceNumber}-items`}>
+                       <TableCell colSpan={9} className="bg-muted/10 p-0">
+                         <div className="px-10 py-3">
                           <Table>
                             <TableHeader>
                               <TableRow>

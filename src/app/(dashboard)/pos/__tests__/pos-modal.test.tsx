@@ -1,7 +1,7 @@
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { type ReactNode } from "react"
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
+import { beforeEach, describe, expect, test, vi } from "vitest"
 
 // ── Mock ALL Radix-based UI components (compose-refs loop in jsdom + React 19) ──
 
@@ -107,8 +107,10 @@ vi.mock("next/navigation", () => ({
 
 // ── Mock cart context ──────────────────────────────────────────────
 let mockCartItems: Array<{ productId: string; name: string; price: number; quantity: number; subtotal: number; unitOfMeasure: string; customUnitName: string | null }> = []
+let mockForcedPromotions: Array<{ id: string; promotionId: string; promotionName: string; type: "COMBO"; groups: Array<{ groupId?: string; optionProductIds: string[] }> }> = []
 const mockAddItem = vi.fn()
 const mockAddItems = vi.fn()
+const mockAddForcedPromotion = vi.fn()
 const mockRemoveItem = vi.fn()
 const mockUpdateQuantity = vi.fn()
 const mockClearCart = vi.fn()
@@ -118,8 +120,10 @@ vi.mock("@/contexts/cart-context", () => ({
   CartProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   useCart: () => ({
     items: mockCartItems,
+    forcedPromotions: mockForcedPromotions,
     addItem: mockAddItem,
     addItems: mockAddItems,
+    addForcedPromotion: mockAddForcedPromotion,
     removeItem: mockRemoveItem,
     updateQuantity: mockUpdateQuantity,
     clearCart: mockClearCart,
@@ -195,11 +199,11 @@ async function waitForLoad() {
 }
 
 describe("POS Page — Promotions UI", () => {
-  afterEach(() => { cleanup() })
-
   beforeEach(() => {
+    cleanup()
     vi.clearAllMocks()
     mockCartItems = []
+    mockForcedPromotions = []
 
     mockGetLocations.mockResolvedValue({
       success: true,
@@ -251,6 +255,7 @@ describe("POS Page — Promotions UI", () => {
     await userEvent.click(screen.getByText("Combo desayuno"))
 
     expect(mockAddItems).toHaveBeenCalledTimes(1)
+    expect(mockAddForcedPromotion).toHaveBeenCalledTimes(1)
     expect(mockAddItems).toHaveBeenCalledWith(
       expect.arrayContaining([
         expect.objectContaining({ productId: "coffee" }),
@@ -315,6 +320,7 @@ describe("POS Page — Promotions UI", () => {
     await userEvent.click(screen.getByRole("button", { name: /Agregar al carrito/i }))
 
     expect(mockAddItems).toHaveBeenCalledTimes(1)
+    expect(mockAddForcedPromotion).toHaveBeenCalledTimes(1)
     expect(mockAddItems).toHaveBeenCalledWith(
       expect.arrayContaining([
         expect.objectContaining({ productId: "coffee" }),

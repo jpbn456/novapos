@@ -439,9 +439,31 @@ export default function PromotionsPage() {
                   </div>
 
                   {groups.map((group, groupIndex) => (
-                    <div key={`${group.sortOrder}-${groupIndex}`} className="space-y-4 rounded-2xl border border-border/70 p-4">
-                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                        <div className="grid flex-1 gap-3 md:grid-cols-2">
+                    <div key={`${group.sortOrder}-${groupIndex}`} className="space-y-4 rounded-2xl border border-border/70 bg-card p-4 shadow-sm">
+                      <div className="flex flex-col gap-4 rounded-xl border border-border/60 bg-muted/15 p-4">
+                        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                          <div className="space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
+                                Grupo {groupIndex + 1}
+                              </span>
+                              <Badge variant={group.type === "OBLIGATORIO" ? "secondary" : "info"}>{formatGroupTypeLabel(group.type)}</Badge>
+                              <span className="text-xs text-muted-foreground">
+                                {group.type === "OBLIGATORIO"
+                                  ? `${group.options.length} opción${group.options.length === 1 ? "" : "es"} incluidas`
+                                  : `${group.requiredQuantity} de ${group.options.length} opciones`}
+                              </span>
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              Definí si este grupo suma productos fijos o una elección del cliente.
+                            </p>
+                          </div>
+                          <Button variant="outline" type="button" onClick={() => setGroups((current) => current.filter((_, currentIndex) => currentIndex !== groupIndex))} disabled={groups.length <= 1}>
+                            Quitar grupo
+                          </Button>
+                        </div>
+
+                        <div className="grid gap-3 md:grid-cols-2">
                           <div className="space-y-2 md:col-span-2">
                             <Label>Nombre del grupo</Label>
                             <Input
@@ -493,16 +515,12 @@ export default function PromotionsPage() {
                             </p>
                           </div>
                         </div>
-                        <Button variant="outline" type="button" onClick={() => setGroups((current) => current.filter((_, currentIndex) => currentIndex !== groupIndex))} disabled={groups.length <= 1}>
-                          Quitar grupo
-                        </Button>
                       </div>
 
-                      <div className="space-y-3">
+                      <div className="space-y-3 rounded-xl border border-dashed border-border/70 bg-background/70 p-4">
                         <div className="flex items-center justify-between gap-3">
                           <div className="flex items-center gap-2">
                             <Label>Opciones</Label>
-                            <Badge variant={group.type === "OBLIGATORIO" ? "secondary" : "info"}>{formatGroupTypeLabel(group.type)}</Badge>
                           </div>
                           <Button
                             variant="outline"
@@ -523,7 +541,7 @@ export default function PromotionsPage() {
                         </div>
 
                         {group.options.map((option, optionIndex) => (
-                          <div key={`${groupIndex}-${optionIndex}`} className="grid gap-3 md:grid-cols-[minmax(0,1fr)_110px_110px]">
+                          <div key={`${groupIndex}-${optionIndex}`} className="grid gap-3 rounded-xl border border-border/50 bg-muted/10 p-3 md:grid-cols-[minmax(0,1fr)_110px_110px] md:items-end">
                             <select
                               value={option.productId}
                               onChange={(event) => setGroups((current) => current.map((entry, currentIndex) => currentIndex === groupIndex

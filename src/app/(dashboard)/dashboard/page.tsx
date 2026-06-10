@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   Banknote,
   CreditCard,
+  FileDown,
   Loader2,
   Plus,
   Receipt,
@@ -29,6 +30,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { exportCashSessionPDF } from "@/lib/reports/pdf-export"
 
 type DashboardMetrics = {
   todaySales: number
@@ -354,6 +356,39 @@ export default function DashboardPage() {
                   </CardDescription>
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => exportCashSessionPDF({
+                      registerLabel: selectedSession.registerLabel,
+                      locationName: selectedSession.locationName,
+                      shiftLabel: selectedSession.shiftLabel,
+                      status: selectedSession.status,
+                      businessDate: formatDate(selectedSession.businessDate),
+                      openedAt: formatDate(selectedSession.openedAt),
+                      closedAt: selectedSession.closedAt ? formatDate(selectedSession.closedAt) : null,
+                      openingCashAmount: selectedSession.openingCashAmount,
+                      expectedCashAmount: selectedSession.expectedCashAmount,
+                      countedCashAmount: selectedSession.countedCashAmount,
+                      differenceAmount: selectedSession.differenceAmount,
+                      totalRaised: selectedSession.totalRaised,
+                      salesCount: selectedSession.salesCount,
+                      externalCashIncome: selectedSession.externalCashIncome,
+                      externalCashExpense: selectedSession.externalCashExpense,
+                      salesBreakdown: selectedSession.salesBreakdown,
+                      movementBreakdown: selectedSession.movementBreakdown,
+                      sales: selectedSession.sales.map((sale) => ({
+                        ...sale,
+                        createdAt: formatDate(sale.createdAt),
+                      })),
+                      movements: selectedSession.movements.map((movement) => ({
+                        ...movement,
+                        createdAt: formatDate(movement.createdAt),
+                      })),
+                    })}
+                  >
+                    <FileDown className="h-4 w-4" />
+                    PDF
+                  </Button>
                   <Button variant="outline" onClick={() => setMovementDialog(true)}>Registrar movimiento</Button>
                   <Button onClick={() => {
                     setCountedCashAmount(String(selectedSession.expectedCashAmount))

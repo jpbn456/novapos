@@ -3,12 +3,13 @@
 import Link from "next/link"
 import { useEffect, useMemo, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
-import { ArrowLeft, Loader2 } from "lucide-react"
+import { ArrowLeft, FileDown, Loader2 } from "lucide-react"
 import { formatQuantity, getQuantityStep, getUnitLabel, type UnitOfMeasureValue } from "@/lib/quantity"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { exportPurchaseOrderPDF } from "@/lib/reports/pdf-export"
 
 type Product = {
   id: string
@@ -311,6 +312,32 @@ export default function PurchaseOrderDetailPage() {
         </div>
 
         <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            onClick={() => exportPurchaseOrderPDF({
+              orderNumber: order.orderNumber,
+              date: new Date(order.createdAt).toLocaleDateString("es-AR"),
+              supplier: order.supplier.name,
+              location: order.location.name,
+              status: statusLabel[order.status],
+              total: order.total,
+              subtotal: order.subtotal,
+              tax: order.tax,
+              expectedDate: order.expectedDate ? new Date(order.expectedDate).toLocaleDateString("es-AR") : null,
+              receivedDate: order.receivedDate ? new Date(order.receivedDate).toLocaleDateString("es-AR") : null,
+              notes: order.notes,
+              items: items.map((item) => ({
+                id: item.id || item.productId,
+                product: item.productName,
+                quantity: item.quantity,
+                unitCost: item.unitCost,
+                subtotal: item.quantity * item.unitCost,
+              })),
+            })}
+          >
+            <FileDown className="h-4 w-4" />
+            PDF
+          </Button>
           {order.status === "PENDING" ? (
             <Button onClick={confirmOrder} disabled={saving}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirmar orden"}
