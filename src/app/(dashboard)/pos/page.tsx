@@ -362,6 +362,7 @@ function POSContent() {
   const currentLocation = locations.find((location) => location.id === locationId)
   const currentCashSession = cashSessions.find((session) => session.id === cashSessionId)
   const productLookup = useMemo(() => new Map(products.map((product) => [product.id, product])), [products])
+  const selectablePromotions = useMemo(() => promotions.filter((promotion) => promotion.type === "COMBO"), [promotions])
 
   const pricing = useMemo<PricingView>(() => calculatePromotionalPricing(
     items.map((item) => ({
@@ -651,7 +652,12 @@ function POSContent() {
                     <QrCode className="h-4 w-4" />
                     Podés buscar por texto, ID o pegar el código de barras manualmente.
                   </div>
-                ) : null}
+                ) : (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <CheckCircle2 className="h-4 w-4" />
+                    Acá se eligen combos. Las promociones escaladas se activan cargando productos y cantidades manualmente.
+                  </div>
+                )}
 
                 {!cashSessions.length ? (
                   <div className="rounded-xl border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning-foreground">
@@ -675,7 +681,7 @@ function POSContent() {
                   <CardDescription>
                     {activeView === "PRODUCTS"
                       ? `${filteredProducts.length} coincidencias para venta rápida.`
-                      : `${promotions.length} promociones activas en esta caja.`}
+                      : `${selectablePromotions.length} combos disponibles para elegir.`}
                   </CardDescription>
                 </div>
                 {loading ? <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /> : null}
@@ -711,15 +717,15 @@ function POSContent() {
                       ))}
                     </div>
                   )
-                ) : promotions.length === 0 ? (
+                ) : selectablePromotions.length === 0 ? (
                   <div className="flex min-h-80 flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-muted/20 text-center">
                     <CheckCircle2 className="mb-3 h-10 w-10 text-muted-foreground" />
-                    <p className="font-medium text-foreground">No hay promos activas.</p>
-                    <p className="text-sm text-muted-foreground">Activá una promoción desde Backoffice para verla acá.</p>
+                    <p className="font-medium text-foreground">No hay combos para elegir.</p>
+                    <p className="text-sm text-muted-foreground">Las promociones escaladas siguen funcionando, pero se activan al cargar productos manualmente.</p>
                   </div>
                 ) : (
                   <div className="grid gap-3 xl:grid-cols-2">
-                    {promotions.map((promotion) => promotion.type === "COMBO" ? (
+                    {selectablePromotions.map((promotion) => (
                       <button
                         key={promotion.id}
                         type="button"
@@ -745,25 +751,6 @@ function POSContent() {
                           ))}
                         </div>
                       </button>
-                    ) : (
-                      <div key={promotion.id} className="flex min-h-48 flex-col rounded-2xl border border-border/70 bg-muted/10 p-4 text-left">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="font-medium text-foreground">{promotion.name}</p>
-                            {promotion.description ? <p className="mt-2 text-sm text-muted-foreground">{promotion.description}</p> : null}
-                          </div>
-                          <Badge variant="secondary">Escala</Badge>
-                        </div>
-
-                        <div className="mt-4 space-y-2 text-sm text-muted-foreground">
-                          <p>Se aplica automáticamente al cargar producto y cantidad suficiente.</p>
-                          {(promotion.tiers || []).map((tier, index) => (
-                            <div key={`${promotion.id}-tier-${index}`} className="rounded-xl border border-border/60 bg-background/70 px-3 py-2">
-                              Desde {tier.minimumQuantity} unidades → {tier.discountPercent != null ? `${tier.discountPercent}%` : formatCurrency(tier.discountAmount || 0)}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
                     ))}
                   </div>
                 )}

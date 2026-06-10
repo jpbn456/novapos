@@ -190,6 +190,21 @@ const samplePromotions = [
       },
     ],
   },
+  {
+    id: "promo-3",
+    name: "Cafe por cantidad",
+    description: "Descuento por llevar varias unidades",
+    type: "SCALE" as const,
+    comboPrice: null,
+    discountPercent: null,
+    discountAmount: null,
+    comboItems: [],
+    groups: [],
+    tiers: [
+      { id: "tier-1", minimumQuantity: 3, discountPercent: 10, discountAmount: null, productId: "coffee" },
+    ],
+    products: [{ id: "pp5", productId: "coffee", product: sampleProducts[0] }],
+  },
 ]
 
 async function waitForLoad() {
@@ -232,7 +247,7 @@ describe("POS Page — Promotions UI", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /Promociones/i }))
 
-    expect(screen.getByText("No hay promos activas.")).toBeInTheDocument()
+    expect(screen.getByText("No hay combos para elegir.")).toBeInTheDocument()
   })
 
   test("renders promotion cards when promotions are active", async () => {
@@ -243,6 +258,20 @@ describe("POS Page — Promotions UI", () => {
 
     expect(screen.getByText("Combo desayuno")).toBeInTheDocument()
     expect(screen.getByText("Combo con opciones")).toBeInTheDocument()
+    expect(screen.queryByText("Cafe por cantidad")).not.toBeInTheDocument()
+    expect(screen.getByText(/Las promociones escaladas se activan cargando productos/i)).toBeInTheDocument()
+  })
+
+  test("shows combo-only empty state when only scale promotions exist", async () => {
+    mockGetActivePromotions.mockResolvedValue([samplePromotions[2]])
+
+    render(<POSPage />)
+    await waitForLoad()
+
+    await userEvent.click(screen.getByRole("button", { name: /Promociones/i }))
+
+    expect(screen.getByText("No hay combos para elegir.")).toBeInTheDocument()
+    expect(screen.getByText(/Las promociones escaladas siguen funcionando/i)).toBeInTheDocument()
   })
 
   test("clicking mandatory-only promo adds items directly to cart without modal", async () => {
