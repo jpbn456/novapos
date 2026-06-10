@@ -3,12 +3,22 @@
 import Link from "next/link"
 import { useEffect, useMemo, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
-import { ArrowLeft, FileDown, Loader2 } from "lucide-react"
+import { ArrowLeft, FileDown, Loader2, PackagePlus } from "lucide-react"
 import { formatQuantity, getQuantityStep, getUnitLabel, type UnitOfMeasureValue } from "@/lib/quantity"
 
+import { createProductForPurchaseOrder } from "@/app/actions/products"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { exportPurchaseOrderPDF } from "@/lib/reports/pdf-export"
 
 type Product = {
@@ -17,6 +27,8 @@ type Product = {
   name: string
   unitOfMeasure: UnitOfMeasureValue
   customUnitName: string | null
+  cost?: number | null
+  price?: number | null
 }
 
 type PurchaseOrderItem = {
@@ -33,6 +45,7 @@ type PurchaseOrder = {
   id: string
   orderNumber: string
   status: "PENDING" | "CONFIRMED" | "PARTIALLY_RECEIVED" | "RECEIVED" | "CANCELLED"
+  supplierId: string
   supplier: { name: string }
   location: { name: string }
   subtotal: number
@@ -55,6 +68,24 @@ type EditableItem = {
   quantity: number
   receivedQty: number
   unitCost: number
+}
+
+type QuickProductForm = {
+  name: string
+  cost: string
+  price: string
+  barcode: string
+  unitOfMeasure: UnitOfMeasureValue
+  customUnitName: string
+}
+
+const emptyQuickProductForm: QuickProductForm = {
+  name: "",
+  cost: "",
+  price: "",
+  barcode: "",
+  unitOfMeasure: "UNIT",
+  customUnitName: "",
 }
 
 const statusLabel: Record<PurchaseOrder["status"], string> = {
@@ -94,6 +125,9 @@ export default function PurchaseOrderDetailPage() {
   const [receiveQuantities, setReceiveQuantities] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [quickProductOpen, setQuickProductOpen] = useState(false)
+  const [quickProductSubmitting, setQuickProductSubmitting] = useState(false)
+  const [quickProduct, setQuickProduct] = useState<QuickProductForm>(emptyQuickProductForm)
 
   const orderId = params?.id
 
@@ -199,6 +233,46 @@ export default function PurchaseOrderDetailPage() {
     setItems((current) => current.filter((item) => item.productId !== productId))
   }
 
+  async function handleCreateQuickProduct() {
+    if (quickProductSubmitting) return
+    if (!order) return
+
+    setQuickProductSubmitting(true)
+
+    const result = await createProductForPurchaseOrder({
+      name: quickProduct.name,
+      cost: Number(quickProduct.cost),
+      price: quickProduct.price ? Number(quickProduct.price) : undefined,
+      barcode: quickProduct.barcode || undefined,
+      unitOfMeasure: quickProduct.unitOfMeasure,
+      customUnitName: quickProduct.unitOfMeasure === "OTHER" ? quickProduct.customUnitName : undefined,
+      supplierId: order.supplierId,
+    })
+
+    if (!result.success || !result.data) {
+      alert(result.error || "No se pudo crear el producto")
+      setQuickProductSubmitting(false)
+      return
+    }
+
+    const createdProduct = {
+      id: result.data.id,
+      name: result.data.name,
+      productNumber: result.data.productNumber,
+      unitOfMeasure: result.data.unitOfMeasure,
+      customUnitName: result.data.customUnitName,
+      cost: result.data.cost,
+      price: result.data.price,
+    }
+
+    setProducts((current) => [createdProduct, ...current].sort((a, b) => a.name.localeCompare(b.name)))
+    setSelectedProductId(createdProduct.id)
+    setSelectedUnitCost(createdProduct.cost || Number(quickProduct.cost) || 0)
+    setQuickProduct(emptyQuickProductForm)
+    setQuickProductOpen(false)
+    setQuickProductSubmitting(false)
+  }
+
   async function saveChanges() {
     if (!orderId) return
 
@@ -300,8 +374,9 @@ export default function PurchaseOrderDetailPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+    <>
+      <div className="space-y-6">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <Link href="/purchase-orders" className="mb-2 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
             <ArrowLeft className="h-4 w-4" />
@@ -376,9 +451,17 @@ export default function PurchaseOrderDetailPage() {
           </Card>
 
           <Card>
-            <CardHeader>
-              <CardTitle>Productos</CardTitle>
-              <CardDescription>Podés ajustar cantidades pendientes. No se puede bajar por debajo de lo recibido.</CardDescription>
+            <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <CardTitle>Productos</CardTitle>
+                <CardDescription>Podés ajustar cantidades pendientes. No se puede bajar por debajo de lo recibido.</CardDescription>
+              </div>
+              {canEdit ? (
+                <Button variant="outline" type="button" className="gap-2" onClick={() => setQuickProductOpen(true)}>
+                  <PackagePlus className="h-4 w-4" />
+                  Crear producto onsite
+                </Button>
+              ) : null}
             </CardHeader>
             <CardContent className="space-y-4">
               {canEdit ? (
@@ -554,6 +637,67 @@ export default function PurchaseOrderDetailPage() {
           </Card>
         </div>
       </div>
-    </div>
+
+      </div>
+
+      <Dialog open={quickProductOpen} onOpenChange={(open) => {
+        setQuickProductOpen(open)
+        if (!open) {
+          setQuickProduct(emptyQuickProductForm)
+        }
+      }}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Crear producto para esta compra</DialogTitle>
+            <DialogDescription>
+              Guardá el producto sin sumar stock. El costo es obligatorio; el precio de venta puede definirse más tarde.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2 md:col-span-2">
+              <Label>Nombre</Label>
+              <Input value={quickProduct.name} onChange={(event) => setQuickProduct((current) => ({ ...current, name: event.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>Costo obligatorio</Label>
+              <Input type="number" min="0" step="0.01" value={quickProduct.cost} onChange={(event) => setQuickProduct((current) => ({ ...current, cost: event.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>Precio de venta opcional</Label>
+              <Input type="number" min="0" step="0.01" value={quickProduct.price} onChange={(event) => setQuickProduct((current) => ({ ...current, price: event.target.value }))} placeholder="Podés definirlo después" />
+            </div>
+            <div className="space-y-2">
+              <Label>Unidad</Label>
+              <select className="h-11 w-full rounded-md border border-input bg-background px-3" value={quickProduct.unitOfMeasure} onChange={(event) => setQuickProduct((current) => ({ ...current, unitOfMeasure: event.target.value as UnitOfMeasureValue }))}>
+                <option value="UNIT">Unidad</option>
+                <option value="ML">Mililitros</option>
+                <option value="G">Gramos</option>
+                <option value="KG">Kilogramos</option>
+                <option value="LT">Litros</option>
+                <option value="OTHER">Otra</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label>Código de barras</Label>
+              <Input value={quickProduct.barcode} onChange={(event) => setQuickProduct((current) => ({ ...current, barcode: event.target.value }))} />
+            </div>
+            {quickProduct.unitOfMeasure === "OTHER" ? (
+              <div className="space-y-2 md:col-span-2">
+                <Label>Unidad personalizada</Label>
+                <Input value={quickProduct.customUnitName} onChange={(event) => setQuickProduct((current) => ({ ...current, customUnitName: event.target.value }))} placeholder="Ej: pack, docena, caja" />
+              </div>
+            ) : null}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setQuickProductOpen(false)}>Cancelar</Button>
+            <Button onClick={handleCreateQuickProduct} disabled={quickProductSubmitting || !quickProduct.name || !quickProduct.cost}>
+              {quickProductSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Crear producto"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
