@@ -11,6 +11,8 @@ export type PurchaseOrderPDFData = {
   total: number
   subtotal?: number
   tax?: number
+  includeTax?: boolean
+  expensesTotal?: number
   expectedDate?: string | null
   receivedDate?: string | null
   notes?: string | null
@@ -237,6 +239,28 @@ export async function exportPurchaseOrderPDF(order: PurchaseOrderPDFData, title 
     margin: { left: 14 },
     tableWidth: 180,
   })
+
+  y = (doc as any).lastAutoTable.finalY + 8
+
+  // Summary lines
+  const subtotal = order.subtotal ?? 0
+  const tax = order.includeTax !== false ? (order.tax ?? 0) : 0
+  const expensesTotal = order.expensesTotal ?? 0
+
+  doc.setFontSize(9)
+  doc.text(`Subtotal: ${formatCurrency(subtotal)}`, 14, y)
+  y += 5
+  if (order.includeTax !== false) {
+    doc.text(`IVA (21%): ${formatCurrency(tax)}`, 14, y)
+    y += 5
+  }
+  if (expensesTotal > 0) {
+    doc.text(`Gastos adicionales: ${formatCurrency(expensesTotal)}`, 14, y)
+    y += 5
+  }
+  doc.setFont("helvetica", "bold")
+  doc.setFontSize(11)
+  doc.text(`Total: ${formatCurrency(order.total)}`, 14, y + 4)
 
   doc.save(`${title.replace(/\s+/g, "-").toLowerCase()}.pdf`)
 }

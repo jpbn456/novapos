@@ -1,12 +1,13 @@
 schema: spec-driven
 
 context: |
-  Tech stack: Next.js 16 App Router, React 19, TypeScript 5.7 (strict), Prisma 7, PostgreSQL
-  Architecture: Server actions (src/app/actions/*), Route handlers (src/app/api/*), Client components, App Router layouts
-  Testing: Not detected (src/test/setup.ts exists but no test runner installed)
-  Style: ESLint via npm run lint, TypeScript tsc --noEmit, no formatter detected
+  Tech stack: Next.js 16 App Router, React 19, TypeScript 5.7 (strict), Prisma 7, PostgreSQL (Supabase)
+  Architecture: Server actions (src/app/actions/*), Route handlers (src/app/api/*), Client components, App Router layouts, shadcn/ui components
+  Auth: NextAuth v5 with credentials provider, Prisma adapter
+  Testing: Vitest v3 with Testing Library (jsdom), setup at src/test/setup.ts
+  Quality: ESLint (npm run lint), TypeScript strict (tsc --noEmit), no formatter detected
 
-strict_tdd: false
+strict_tdd: true
 
 rules:
   proposal:

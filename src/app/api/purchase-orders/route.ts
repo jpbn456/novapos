@@ -12,6 +12,13 @@ const createOrderSchema = z.object({
   locationId: z.string().min(1, 'Location is required'),
   expectedDate: z.string().optional(),
   notes: z.string().optional(),
+  includeTax: z.boolean().optional().default(true),
+  expenses: z.array(
+    z.object({
+      description: z.string().min(1, 'Description is required'),
+      amount: z.number().positive('Amount must be positive'),
+    })
+  ).optional().default([]),
   items: z.array(
     z.object({
       productId: z.string().min(1, 'Product is required'),
@@ -91,7 +98,11 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const validatedData = createOrderSchema.parse(body)
 
-    const { subtotal, tax, total } = calculatePurchaseOrderTotals(validatedData.items)
+    const { subtotal, tax, total, expensesTotal } = calculatePurchaseOrderTotals(
+      validatedData.items,
+      validatedData.includeTax,
+      validatedData.expenses
+    )
 
     // Generate order number
     const orderNumber = `PO-${Date.now()}-${Math.random().toString(36).substring(7).toUpperCase()}`
@@ -106,6 +117,7 @@ export async function POST(request: NextRequest) {
           ? new Date(validatedData.expectedDate)
           : null,
         notes: validatedData.notes,
+        includeTax: validatedData.includeTax,
         subtotal,
         tax,
         total,
@@ -115,6 +127,12 @@ export async function POST(request: NextRequest) {
             quantity: item.quantity,
             unitCost: item.unitCost,
             subtotal: item.quantity * item.unitCost,
+          })),
+        },
+        expenses: {
+          create: validatedData.expenses.map((exp) => ({
+            description: exp.description,
+            amount: exp.amount,
           })),
         },
       },
@@ -128,6 +146,7 @@ export async function POST(request: NextRequest) {
             },
           },
         },
+        expenses: true,
       },
     })
 

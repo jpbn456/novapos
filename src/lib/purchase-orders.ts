@@ -13,12 +13,17 @@ type PurchaseOrderItemLike = {
   unitCost: unknown
 }
 
-export function calculatePurchaseOrderTotals(items: Array<Pick<PurchaseOrderItemLike, "quantity" | "unitCost">>) {
+export function calculatePurchaseOrderTotals(
+  items: Array<Pick<PurchaseOrderItemLike, "quantity" | "unitCost">>,
+  includeTax: boolean = true,
+  expenses?: Array<{ amount: unknown }>
+) {
   const subtotal = items.reduce((sum, item) => sum + toNumber(item.quantity) * toNumber(item.unitCost), 0)
-  const tax = subtotal * 0.21
-  const total = subtotal + tax
+  const tax = includeTax ? subtotal * 0.21 : 0
+  const expensesTotal = expenses ? expenses.reduce((sum, exp) => sum + toNumber(exp.amount), 0) : 0
+  const total = subtotal + tax + expensesTotal
 
-  return { subtotal, tax, total }
+  return { subtotal, tax, total, expensesTotal }
 }
 
 export function derivePurchaseOrderStatus(
@@ -45,9 +50,10 @@ function toNumber(value: unknown) {
   return typeof value === "number" ? value : Number(value || 0)
 }
 
-export function serializePurchaseOrder<T extends { subtotal: unknown; tax: unknown; total: unknown; items?: any[] }>(order: T) {
+export function serializePurchaseOrder<T extends { subtotal: unknown; tax: unknown; total: unknown; items?: any[]; includeTax?: unknown; expenses?: any[]; attachments?: any[] }>(order: T) {
   return {
     ...order,
+    includeTax: order.includeTax !== undefined ? Boolean(order.includeTax) : true,
     subtotal: toNumber(order.subtotal),
     tax: toNumber(order.tax),
     total: toNumber(order.total),
@@ -64,6 +70,13 @@ export function serializePurchaseOrder<T extends { subtotal: unknown; tax: unkno
             cost: item.product.cost != null ? toNumber(item.product.cost) : item.product.cost,
           }
         : item.product,
+    })),
+    expenses: order.expenses?.map((exp: any) => ({
+      ...exp,
+      amount: toNumber(exp.amount),
+    })),
+    attachments: order.attachments?.map((att: any) => ({
+      ...att,
     })),
   }
 }

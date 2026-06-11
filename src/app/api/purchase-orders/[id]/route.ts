@@ -21,12 +21,20 @@ const updateItemsSchema = z
   )
   .min(1, 'At least one item is required')
 
+const expenseInputSchema = z.object({
+  id: z.string().optional(),
+  description: z.string().min(1, 'Description is required'),
+  amount: z.number().positive('Amount must be positive'),
+})
+
 const updateOrderSchema = z.object({
   supplierId: z.string().optional(),
   locationId: z.string().optional(),
   status: z.enum(['PENDING', 'CONFIRMED', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CANCELLED']).optional(),
   expectedDate: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
+  includeTax: z.boolean().optional(),
+  expenses: z.array(expenseInputSchema).optional(),
   items: updateItemsSchema.optional(),
 })
 
@@ -69,6 +77,8 @@ export async function GET(
             },
           },
         },
+        expenses: true,
+        attachments: true,
       },
     })
 
@@ -183,6 +193,7 @@ export async function PUT(
       locationId: data.locationId,
       notes: data.notes === undefined ? undefined : data.notes || null,
       status: data.status,
+      includeTax: data.includeTax,
     }
 
     if (data.expectedDate !== undefined) {
@@ -223,7 +234,9 @@ export async function PUT(
         }
       }
 
-      const { subtotal, tax, total } = calculatePurchaseOrderTotals(data.items)
+      const effectiveIncludeTax = data.includeTax !== undefined ? data.includeTax : currentOrder.includeTax
+      const effectiveExpenses = data.expenses || []
+      const { subtotal, tax, total } = calculatePurchaseOrderTotals(data.items, effectiveIncludeTax, effectiveExpenses)
         const nextItemsState = data.items.map((item) => ({
           ...item,
         receivedQty: Number(currentItemsByProductId.get(item.productId)?.receivedQty || 0),
@@ -236,6 +249,7 @@ export async function PUT(
 
       updateData = {
         ...updateData,
+        includeTax: effectiveIncludeTax,
         subtotal,
         tax,
         total,
@@ -254,6 +268,48 @@ export async function PUT(
       }
     }
 
+    // Handle expenses diff (even when items didn't change)
+    if (data.expenses) {
+      const incomingIds = data.expenses.filter((e) => e.id).map((e) => e.id!)
+      // Delete expenses not in incoming list
+      await prisma.purchaseOrderExpense.deleteMany({
+        where: {
+          purchaseOrderId: id,
+          id: { notIn: incomingIds },
+        },
+      })
+      // Create new expenses (those without id)
+      const newExpenses = data.expenses.filter((e) => !e.id)
+      for (const exp of newExpenses) {
+        await prisma.purchaseOrderExpense.create({
+          data: {
+            purchaseOrderId: id,
+            description: exp.description,
+            amount: exp.amount,
+          },
+        })
+      }
+    }
+
+    // Handle includeTax update when items didn't change
+    if (data.includeTax !== undefined && !data.items) {
+      const currentExpenses = await prisma.purchaseOrderExpense.findMany({
+        where: { purchaseOrderId: id },
+      })
+      const { subtotal, tax, total } = calculatePurchaseOrderTotals(
+        currentOrder.items,
+        data.includeTax,
+        currentExpenses
+      )
+      updateData = {
+        ...updateData,
+        includeTax: data.includeTax,
+        subtotal,
+        tax,
+        total,
+      }
+    }
+
     const order = await prisma.purchaseOrder.update({
       where: { id },
       data: updateData,
@@ -267,6 +323,8 @@ export async function PUT(
             },
           },
         },
+        expenses: true,
+        attachments: true,
       },
     })
 

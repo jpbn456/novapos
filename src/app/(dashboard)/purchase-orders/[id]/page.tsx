@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { useEffect, useMemo, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
-import { ArrowLeft, FileDown, Loader2, PackagePlus } from "lucide-react"
+import { ArrowLeft, Download, FileDown, Loader2, PackagePlus, Plus, Trash2 } from "lucide-react"
 import { formatQuantity, getQuantityStep, getUnitLabel, type UnitOfMeasureValue } from "@/lib/quantity"
 
 import { createProductForPurchaseOrder } from "@/app/actions/products"
@@ -41,6 +41,20 @@ type PurchaseOrderItem = {
   product: Product
 }
 
+type PurchaseOrderExpense = {
+  id: string
+  description: string
+  amount: number
+}
+
+type PurchaseOrderAttachment = {
+  id: string
+  name: string
+  fileUrl: string
+  type: "RECEIPT" | "BUDGET" | "OTHER"
+  createdAt: string
+}
+
 type PurchaseOrder = {
   id: string
   orderNumber: string
@@ -51,11 +65,14 @@ type PurchaseOrder = {
   subtotal: number
   tax: number
   total: number
+  includeTax: boolean
   expectedDate: string | null
   receivedDate: string | null
   notes: string | null
   createdAt: string
   items: PurchaseOrderItem[]
+  expenses?: PurchaseOrderExpense[]
+  attachments?: PurchaseOrderAttachment[]
 }
 
 type EditableItem = {
@@ -118,11 +135,18 @@ export default function PurchaseOrderDetailPage() {
   const [items, setItems] = useState<EditableItem[]>([])
   const [expectedDate, setExpectedDate] = useState("")
   const [notes, setNotes] = useState("")
+  const [includeTax, setIncludeTax] = useState(true)
   const [selectedProductId, setSelectedProductId] = useState("")
   const [selectedQuantity, setSelectedQuantity] = useState(1)
   const [selectedUnitCost, setSelectedUnitCost] = useState(0)
   const [receiveNotes, setReceiveNotes] = useState("")
   const [receiveQuantities, setReceiveQuantities] = useState<Record<string, string>>({})
+  const [expenses, setExpenses] = useState<PurchaseOrderExpense[]>([])
+  const [newExpenseDesc, setNewExpenseDesc] = useState("")
+  const [newExpenseAmount, setNewExpenseAmount] = useState(0)
+  const [attachments, setAttachments] = useState<PurchaseOrderAttachment[]>([])
+  const [attachmentType, setAttachmentType] = useState<"RECEIPT" | "BUDGET" | "OTHER">("RECEIPT")
+  const [uploading, setUploading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [quickProductOpen, setQuickProductOpen] = useState(false)
@@ -137,11 +161,12 @@ export default function PurchaseOrderDetailPage() {
 
   const totals = useMemo(() => {
     const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unitCost, 0)
-    const tax = subtotal * 0.21
-    const total = subtotal + tax
+    const tax = includeTax ? subtotal * 0.21 : 0
+    const expensesTotal = expenses.reduce((sum, exp) => sum + exp.amount, 0)
+    const total = subtotal + tax + expensesTotal
 
-    return { subtotal, tax, total }
-  }, [items])
+    return { subtotal, tax, expensesTotal, total }
+  }, [items, includeTax, expenses])
 
   async function loadData() {
     if (!orderId) return
@@ -177,6 +202,9 @@ export default function PurchaseOrderDetailPage() {
       )
       setExpectedDate(formatDateInput(orderData.expectedDate))
       setNotes(orderData.notes || "")
+      setIncludeTax(orderData.includeTax !== false)
+      setExpenses(orderData.expenses || [])
+      setAttachments(orderData.attachments || [])
       setProducts(Array.isArray(productsData.products) ? productsData.products : [])
       setReceiveQuantities({})
       setReceiveNotes("")
@@ -278,12 +306,19 @@ export default function PurchaseOrderDetailPage() {
 
     setSaving(true)
     try {
+      const putIncludeTax = includeTax !== order?.includeTax ? includeTax : undefined
       const res = await fetch(`/api/purchase-orders/${orderId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           expectedDate: expectedDate || null,
           notes,
+          includeTax: putIncludeTax,
+          expenses: expenses.map((exp) => ({
+            ...(exp.id ? { id: exp.id } : {}),
+            description: exp.description,
+            amount: exp.amount,
+          })),
           items: items.map((item) => ({
             productId: item.productId,
             quantity: item.quantity,
@@ -630,9 +665,204 @@ export default function PurchaseOrderDetailPage() {
               <div className="flex justify-between"><span>Esperada</span><span>{order.expectedDate ? new Date(order.expectedDate).toLocaleDateString("es-AR") : "-"}</span></div>
               <div className="flex justify-between"><span>Recibida completa</span><span>{order.receivedDate ? new Date(order.receivedDate).toLocaleDateString("es-AR") : "-"}</span></div>
               <div className="border-t pt-3" />
+              {canEdit ? (
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={includeTax}
+                    onChange={(event) => setIncludeTax(event.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300"
+                  />
+                  <span>Incluye IVA (21%)</span>
+                </label>
+              ) : (
+                <div className="flex justify-between"><span>Incluye IVA</span><span>{includeTax ? "Sí" : "No"}</span></div>
+              )}
               <div className="flex justify-between"><span>Subtotal</span><span>{formatCurrency(totals.subtotal)}</span></div>
-              <div className="flex justify-between"><span>IVA</span><span>{formatCurrency(totals.tax)}</span></div>
+              {includeTax ? (
+                <div className="flex justify-between"><span>IVA (21%)</span><span>{formatCurrency(totals.tax)}</span></div>
+              ) : (
+                <div className="flex justify-between text-muted-foreground"><span>IVA</span><span>$0</span></div>
+              )}
+              {totals.expensesTotal > 0 ? (
+                <div className="flex justify-between"><span>Gastos adicionales</span><span>{formatCurrency(totals.expensesTotal)}</span></div>
+              ) : null}
               <div className="flex justify-between font-semibold"><span>Total</span><span>{formatCurrency(totals.total)}</span></div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Gastos adicionales</CardTitle>
+              <CardDescription>Fletes, seguros, y otros gastos asociados a esta compra.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {expenses.length > 0 ? (
+                <div className="space-y-2">
+                  {expenses.map((exp) => (
+                    <div key={exp.id} className="flex items-center justify-between gap-2 rounded-lg border border-border/70 p-2">
+                      <div className="flex-1">
+                        <p className="text-sm font-medium">{exp.description}</p>
+                        <p className="text-sm text-muted-foreground">{formatCurrency(exp.amount)}</p>
+                      </div>
+                      {canEdit ? (
+                        <button
+                          type="button"
+                          onClick={() => setExpenses((current) => current.filter((e) => e.id !== exp.id))}
+                          className="text-destructive hover:text-destructive/80"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">Sin gastos adicionales registrados.</p>
+              )}
+              {canEdit ? (
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newExpenseDesc}
+                    onChange={(event) => setNewExpenseDesc(event.target.value)}
+                    placeholder="Descripción"
+                    className="h-10 flex-1 rounded-md border border-input bg-background px-3 text-sm"
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={newExpenseAmount || ""}
+                    onChange={(event) => setNewExpenseAmount(parseFloat(event.target.value) || 0)}
+                    placeholder="Monto"
+                    className="h-10 w-28 rounded-md border border-input bg-background px-3 text-sm"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!newExpenseDesc || newExpenseAmount <= 0}
+                    onClick={() => {
+                      setExpenses((current) => [...current, {
+                        id: `new-${Date.now()}`,
+                        description: newExpenseDesc,
+                        amount: newExpenseAmount,
+                      }])
+                      setNewExpenseDesc("")
+                      setNewExpenseAmount(0)
+                    }}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Adjuntos</CardTitle>
+              <CardDescription>Facturas, presupuestos y documentos relacionados.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {attachments.length > 0 ? (
+                <div className="space-y-2">
+                  {attachments.map((att) => (
+                    <div key={att.id} className="flex items-center justify-between gap-2 rounded-lg border border-border/70 p-2">
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <span className="inline-flex items-center rounded-md bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 ring-1 ring-blue-700/10">
+                          {att.type === "RECEIPT" ? "Factura" : att.type === "BUDGET" ? "Presupuesto" : "Otro"}
+                        </span>
+                        <p className="text-sm font-medium truncate">{att.name}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <a href={att.fileUrl} target="_blank" rel="noopener noreferrer" download>
+                          <Button type="button" variant="ghost" size="sm">
+                            <Download className="h-4 w-4" />
+                          </Button>
+                        </a>
+                        {canEdit ? (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!confirm("¿Eliminar este archivo?")) return
+                              try {
+                                const res = await fetch(`/api/purchase-orders/${orderId}/attachments/${att.id}`, {
+                                  method: "DELETE",
+                                })
+                                if (!res.ok) throw new Error("Error al eliminar")
+                                setAttachments((current) => current.filter((a) => a.id !== att.id))
+                              } catch {
+                                alert("No se pudo eliminar el archivo")
+                              }
+                            }}
+                            className="text-destructive hover:text-destructive/80"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">Sin archivos adjuntos.</p>
+              )}
+              {canEdit ? (
+                <div className="flex gap-2">
+                  <select
+                    value={attachmentType}
+                    onChange={(event) => setAttachmentType(event.target.value as "RECEIPT" | "BUDGET" | "OTHER")}
+                    className="h-10 w-36 rounded-md border border-input bg-background px-2 text-sm"
+                  >
+                    <option value="RECEIPT">Factura</option>
+                    <option value="BUDGET">Presupuesto</option>
+                    <option value="OTHER">Otro</option>
+                  </select>
+                  <input
+                    type="file"
+                    accept=".pdf,application/pdf"
+                    onChange={async (event) => {
+                      const file = event.target.files?.[0]
+                      if (!file) return
+
+                      setUploading(true)
+                      try {
+                        const formData = new FormData()
+                        formData.append("file", file)
+                        formData.append("name", file.name)
+                        formData.append("type", attachmentType)
+
+                        const res = await fetch(`/api/purchase-orders/${orderId}/attachments`, {
+                          method: "POST",
+                          body: formData,
+                        })
+
+                        if (!res.ok) {
+                          const payload = await res.json().catch(() => null)
+                          throw new Error(payload?.error || "Error al subir archivo")
+                        }
+
+                        const newAttachment = await res.json()
+                        setAttachments((current) => [...current, newAttachment])
+                      } catch (error: any) {
+                        alert(error.message || "No se pudo subir el archivo")
+                      } finally {
+                        setUploading(false)
+                        event.target.value = ""
+                      }
+                    }}
+                    className="h-10 flex-1 rounded-md border border-input bg-background px-3 text-sm file:mr-3 file:rounded file:border-0 file:bg-primary file:px-3 file:py-1 file:text-sm file:text-primary-foreground"
+                  />
+                </div>
+              ) : null}
+              {uploading ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Subiendo archivo...
+                </div>
+              ) : null}
             </CardContent>
           </Card>
         </div>

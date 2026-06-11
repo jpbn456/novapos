@@ -396,6 +396,7 @@ model PurchaseOrder {
   expectedDate   DateTime?
   receivedDate   DateTime?
   notes          String?            @db.Text
+  includeTax     Boolean            @default(true)
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
 
@@ -403,8 +404,41 @@ model PurchaseOrder {
   location   Location           @relation(fields: [locationId], references: [id])
   user       User               @relation(fields: [userId], references: [id])
   items      PurchaseOrderItem[]
+  expenses   PurchaseOrderExpense[]
+  attachments PurchaseOrderAttachment[]
   cashMovements CashMovement[]
   inventoryMovements InventoryMovement[]
+}
+
+model PurchaseOrderExpense {
+  id              String   @id @default(cuid())
+  purchaseOrderId String
+  description     String
+  amount          Decimal  @db.Decimal(10, 2)
+  createdAt       DateTime @default(now())
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  @@index([purchaseOrderId])
+}
+
+enum PurchaseOrderAttachmentType {
+  RECEIPT
+  BUDGET
+  OTHER
+}
+
+model PurchaseOrderAttachment {
+  id              String                      @id @default(cuid())
+  purchaseOrderId String
+  name            String
+  fileUrl         String
+  type            PurchaseOrderAttachmentType @default(OTHER)
+  createdAt       DateTime                    @default(now())
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  @@index([purchaseOrderId])
 }
 
 model PurchaseOrderItem {

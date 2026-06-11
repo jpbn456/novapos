@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Loader2, PackagePlus, Plus, ShoppingBag } from "lucide-react"
+import { Loader2, PackagePlus, Plus, ShoppingBag, Trash2 } from "lucide-react"
 
 import { createProductForPurchaseOrder } from "@/app/actions/products"
 import { PageHeader } from "@/components/dashboard/page-primitives"
@@ -73,11 +73,15 @@ export default function NewPurchaseOrderPage() {
   const [selectedLocation, setSelectedLocation] = useState("")
   const [expectedDate, setExpectedDate] = useState("")
   const [notes, setNotes] = useState("")
+  const [includeTax, setIncludeTax] = useState(true)
   const [items, setItems] = useState<OrderItem[]>([])
   const [selectedProduct, setSelectedProduct] = useState("")
   const [quantity, setQuantity] = useState(1)
   const [unitCost, setUnitCost] = useState(0)
   const [quickProduct, setQuickProduct] = useState<QuickProductForm>(emptyQuickProductForm)
+  const [expenses, setExpenses] = useState<{ description: string; amount: number }[]>([])
+  const [newExpenseDesc, setNewExpenseDesc] = useState("")
+  const [newExpenseAmount, setNewExpenseAmount] = useState(0)
 
   useEffect(() => {
     Promise.all([
@@ -179,6 +183,8 @@ export default function NewPurchaseOrderPage() {
           locationId: selectedLocation,
           expectedDate: expectedDate || undefined,
           notes: notes || undefined,
+          includeTax,
+          expenses: expenses.length > 0 ? expenses : undefined,
           items: items.map((item) => ({ productId: item.productId, quantity: item.quantity, unitCost: item.unitCost })),
         }),
       })
@@ -200,10 +206,11 @@ export default function NewPurchaseOrderPage() {
 
   const summary = useMemo(() => {
     const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0)
-    const tax = subtotal * 0.21
-    const total = subtotal + tax
-    return { subtotal, tax, total }
-  }, [items])
+    const tax = includeTax ? subtotal * 0.21 : 0
+    const expensesTotal = expenses.reduce((sum, exp) => sum + exp.amount, 0)
+    const total = subtotal + tax + expensesTotal
+    return { subtotal, tax, expensesTotal, total }
+  }, [items, includeTax, expenses])
 
   if (bootstrapping) {
     return (
@@ -398,9 +405,84 @@ export default function NewPurchaseOrderPage() {
               </CardHeader>
               <CardContent className="space-y-3 text-sm">
                 <div className="flex justify-between"><span>Items</span><span>{items.length}</span></div>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={includeTax}
+                    onChange={(event) => setIncludeTax(event.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300"
+                  />
+                  <span>Incluye IVA (21%)</span>
+                </label>
                 <div className="flex justify-between"><span>Subtotal</span><span>{formatCurrency(summary.subtotal)}</span></div>
-                <div className="flex justify-between"><span>IVA (21%)</span><span>{formatCurrency(summary.tax)}</span></div>
+                {includeTax ? (
+                  <div className="flex justify-between"><span>IVA (21%)</span><span>{formatCurrency(summary.tax)}</span></div>
+                ) : (
+                  <div className="flex justify-between text-muted-foreground"><span>IVA</span><span>$0</span></div>
+                )}
+                {summary.expensesTotal > 0 ? (
+                  <div className="flex justify-between"><span>Gastos adicionales</span><span>{formatCurrency(summary.expensesTotal)}</span></div>
+                ) : null}
                 <div className="border-t border-border/70 pt-3 flex justify-between text-base font-semibold"><span>Total</span><span>{formatCurrency(summary.total)}</span></div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Gastos adicionales</CardTitle>
+                <CardDescription>Fletes, seguros, y otros gastos asociados a esta compra.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {expenses.length > 0 ? (
+                  <div className="space-y-2">
+                    {expenses.map((exp, index) => (
+                      <div key={index} className="flex items-center justify-between gap-2 rounded-lg border border-border/70 p-2">
+                        <div className="flex-1">
+                          <p className="text-sm font-medium">{exp.description}</p>
+                          <p className="text-sm text-muted-foreground">{formatCurrency(exp.amount)}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setExpenses((current) => current.filter((_, i) => i !== index))}
+                          className="text-destructive hover:text-destructive/80"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newExpenseDesc}
+                    onChange={(event) => setNewExpenseDesc(event.target.value)}
+                    placeholder="Descripción"
+                    className="h-10 flex-1 rounded-md border border-input bg-background px-3 text-sm"
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={newExpenseAmount || ""}
+                    onChange={(event) => setNewExpenseAmount(parseFloat(event.target.value) || 0)}
+                    placeholder="Monto"
+                    className="h-10 w-28 rounded-md border border-input bg-background px-3 text-sm"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!newExpenseDesc || newExpenseAmount <= 0}
+                    onClick={() => {
+                      setExpenses((current) => [...current, { description: newExpenseDesc, amount: newExpenseAmount }])
+                      setNewExpenseDesc("")
+                      setNewExpenseAmount(0)
+                    }}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
               </CardContent>
             </Card>
 
