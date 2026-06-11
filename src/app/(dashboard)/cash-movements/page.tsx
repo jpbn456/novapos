@@ -5,10 +5,11 @@ import { useEffect, useMemo, useState } from "react"
 import { getCashSessions } from "@/app/actions/cash"
 import { getLocations } from "@/app/actions/locations"
 import { PageHeader, StatCard } from "@/components/dashboard/page-primitives"
+import { EditSaleDialog } from "@/components/dashboard/edit-sale-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { exportCashSessionPDF } from "@/lib/reports/pdf-export"
-import { Banknote, FileDown, Receipt, Scale, Wallet } from "lucide-react"
+import { Banknote, FileDown, Pencil, Receipt, Scale, Wallet } from "lucide-react"
 
 type Location = {
   id: string
@@ -71,6 +72,7 @@ export default function CashMovementsPage() {
   const [status, setStatus] = useState<"OPEN" | "CLOSED">("OPEN")
   const [sessions, setSessions] = useState<CashSessionSummary[]>([])
   const [selectedSessionId, setSelectedSessionId] = useState("")
+  const [editingSaleId, setEditingSaleId] = useState<string | null>(null)
 
   useEffect(() => {
     getLocations().then((result) => {
@@ -278,9 +280,19 @@ export default function CashMovementsPage() {
                           <p className="font-medium text-foreground">Factura {sale.invoiceNumber.slice(0, 8)}</p>
                           <p className="text-muted-foreground">{formatDate(sale.createdAt)}</p>
                         </div>
-                        <div className="text-right">
-                          <p className="font-semibold text-foreground">{formatCurrency(sale.total)}</p>
-                          <p className="text-muted-foreground">{sale.paymentMethod}</p>
+                        <div className="flex items-center gap-3 text-right">
+                          <div>
+                            <p className="font-semibold text-foreground">{formatCurrency(sale.total)}</p>
+                            <p className="text-muted-foreground">{sale.paymentMethod}</p>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 shrink-0"
+                            onClick={() => setEditingSaleId(sale.id)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
                         </div>
                       </div>
                     </div>
@@ -298,6 +310,25 @@ export default function CashMovementsPage() {
           </Card>
         )}
       </div>
+
+      {editingSaleId ? (
+        <EditSaleDialog
+          saleId={editingSaleId}
+          open={!!editingSaleId}
+          onOpenChange={(open) => {
+            if (!open) setEditingSaleId(null)
+          }}
+          onSaved={() => {
+            // Reload sessions to reflect changes
+            if (selectedLocationId) {
+              getCashSessions(selectedLocationId, status).then((result) => {
+                const normalized = result as CashSessionSummary[]
+                setSessions(normalized)
+              })
+            }
+          }}
+        />
+      ) : null}
     </div>
   )
 }
