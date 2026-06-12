@@ -166,27 +166,24 @@ function CashBillBreakdownEditor({ breakdown, total, idPrefix, title, descriptio
     <div className="space-y-2">
       {title && <p className="text-xs font-medium text-foreground">{title}</p>}
       {description && <p className="text-xs text-muted-foreground">{description}</p>}
-      <div className="grid gap-2 grid-cols-4">
+      <div className="space-y-1">
         {CASH_BILL_DENOMINATIONS.map((denomination) => {
           const key = String(denomination) as keyof CashBillBreakdown
           const inputId = `${idPrefix}-${denomination}`
 
           return (
-            <div key={denomination} className="space-y-1.5 rounded-lg border border-border/70 p-2">
-              <Label htmlFor={inputId} className="text-xs">$ {formatCurrency(denomination).replace("$", "")}</Label>
+            <div key={denomination} className="flex items-center gap-3 rounded-md border border-border/60 px-3 py-1.5">
+              <Label htmlFor={inputId} className="w-20 text-xs shrink-0">$ {formatCurrency(denomination).replace("$", "")}</Label>
               <Input
                 id={inputId}
                 type="number"
                 min="0"
                 step="1"
-                className="h-8 text-sm"
+                className="h-7 w-20 text-sm text-center"
                 value={breakdown[key]}
                 onChange={(event) => onChange(denomination, parseBillCount(event.target.value))}
               />
-              <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                <span>{breakdown[key]} x {formatCurrency(denomination)}</span>
-                <span>{formatCurrency(denomination * breakdown[key])}</span>
-              </div>
+              <span className="text-[11px] text-muted-foreground">= {formatCurrency(denomination * breakdown[key])}</span>
             </div>
           )
         })}
