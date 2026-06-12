@@ -275,75 +275,112 @@ export async function exportPurchaseOrderPDF(order: PurchaseOrderPDFData, title 
 export async function exportCashSessionPDF(session: CashSessionPDFData, title = `caja-${session.registerLabel}`) {
   const { jsPDF, autoTable } = await loadPdfTools()
   const doc = new jsPDF({ unit: "mm", format: "a4" })
-  const breakdownRows = CASH_BILL_DENOMINATIONS.map((denomination) => [
-    formatCurrency(denomination),
-    session.openingCashBreakdown ? String(session.openingCashBreakdown[String(denomination) as keyof CashBillBreakdown]) : "-",
-    session.closingCashBreakdown ? String(session.closingCashBreakdown[String(denomination) as keyof CashBillBreakdown]) : "-",
-  ])
 
-  doc.setFontSize(16)
-  doc.text(`Caja ${session.registerLabel}`, 14, 20)
-  doc.setFontSize(10)
-  doc.text(`${session.locationName} | turno ${session.shiftLabel.toLowerCase()} | ${session.businessDate}`, 14, 28)
-  doc.text(`Estado: ${session.status} | Ventas: ${session.salesCount} | Recaudado: ${formatCurrency(session.totalRaised)}`, 14, 34)
+  const openingTotal = session.openingCashBreakdown
+    ? calculateCashBillBreakdownTotal(session.openingCashBreakdown) : 0
+  const closingTotal = session.closingCashBreakdown
+    ? calculateCashBillBreakdownTotal(session.closingCashBreakdown) : 0
 
-  autoTable(doc, {
-    startY: 42,
-    head: [["Métrica", "Valor"]],
-    body: [
-      ["Apertura", formatCurrency(session.openingCashAmount)],
-      ["Efectivo esperado", formatCurrency(session.expectedCashAmount)],
-      ["Efectivo contado", session.countedCashAmount != null ? formatCurrency(session.countedCashAmount) : "Pendiente"],
-      ["Diferencia", session.differenceAmount != null ? formatCurrency(session.differenceAmount) : "Pendiente"],
-      ["Ingresos externos efectivo", formatCurrency(session.externalCashIncome)],
-      ["Egresos externos efectivo", formatCurrency(session.externalCashExpense)],
-    ],
-    theme: "grid",
-    headStyles: { fontSize: 8, fillColor: [59, 130, 246] },
-    bodyStyles: { fontSize: 8 },
-    margin: { left: 14 },
-    tableWidth: 90,
-  })
+  doc.setFontSize(14)
+  doc.text("Registro de Caja", 14, 18)
+  doc.setFontSize(9)
+  doc.text(`${session.locationName} | ${session.registerLabel} | turno ${session.shiftLabel.toLowerCase()}`, 14, 25)
+  doc.text(`Fecha: ${session.businessDate}`, 14, 30)
 
-  autoTable(doc, {
-    startY: 42,
-    margin: { left: 108 },
-    head: [["Medio", "Ventas", "Ingresos", "Egresos"]],
-    body: (["CASH", "CARD", "TRANSFER", "OTHER"] as const).map((method) => [
-      method,
-      formatCurrency(session.salesBreakdown[method]),
-      formatCurrency(session.movementBreakdown[method].income),
-      formatCurrency(session.movementBreakdown[method].expense),
-    ]),
-    theme: "grid",
-    headStyles: { fontSize: 8, fillColor: [59, 130, 246] },
-    bodyStyles: { fontSize: 8 },
-    tableWidth: 92,
-  })
-
-  let y = Math.max((doc as any).lastAutoTable.finalY + 8, 88)
+  let y = 38
 
   autoTable(doc, {
     startY: y,
-    head: [["Denominación", "Apertura", "Cierre"]],
+    head: [["Billetes", "Inicio (cant)", "Inicio ($)", "Final (cant)", "Final ($)"]],
     body: [
-      ...breakdownRows,
+      ...CASH_BILL_DENOMINATIONS.map((denomination) => {
+        const openingCount = session.openingCashBreakdown
+          ? session.openingCashBreakdown[String(denomination) as keyof CashBillBreakdown] : 0
+        const closingCount = session.closingCashBreakdown
+          ? session.closingCashBreakdown[String(denomination) as keyof CashBillBreakdown] : 0
+        return [
+          formatCurrency(denomination),
+          String(openingCount),
+          formatCurrency(denomination * openingCount),
+          String(closingCount),
+          formatCurrency(denomination * closingCount),
+        ]
+      }),
       [
-        "Total",
-        session.openingCashBreakdown ? formatCurrency(calculateCashBillBreakdownTotal(session.openingCashBreakdown)) : "-",
-        session.closingCashBreakdown ? formatCurrency(calculateCashBillBreakdownTotal(session.closingCashBreakdown)) : "-",
+        { content: "Total efectivo", colSpan: 1, styles: { fontStyle: "bold" } },
+        "",
+        { content: formatCurrency(openingTotal), styles: { fontStyle: "bold" } },
+        "",
+        { content: formatCurrency(closingTotal), styles: { fontStyle: "bold" } },
       ],
     ],
     theme: "grid",
-    headStyles: { fontSize: 8, fillColor: [59, 130, 246] },
+    headStyles: { fontSize: 8, fillColor: [80, 80, 80] },
     bodyStyles: { fontSize: 8 },
     margin: { left: 14 },
     tableWidth: 180,
   })
 
-  y = (doc as any).lastAutoTable.finalY + 8
+  y = (doc as any).lastAutoTable.finalY + 6
 
-  doc.setFontSize(11)
+  doc.setFontSize(10)
+  doc.setFont("helvetica", "bold")
+  doc.text("Resumen de recaudación", 14, y)
+  y += 5
+  doc.setFont("helvetica", "normal")
+  doc.setFontSize(9)
+  doc.text(`Total efectivo:      ${formatCurrency(session.salesBreakdown.CASH)}`, 14, y)
+  y += 4.5
+  doc.text(`Total transferencia: ${formatCurrency(session.salesBreakdown.TRANSFER)}`, 14, y)
+  y += 4.5
+  doc.text(`Total otro:          ${formatCurrency(session.salesBreakdown.OTHER)}`, 14, y)
+  y += 4.5
+  doc.setDrawColor(150, 150, 150)
+  doc.line(14, y, 80, y)
+  y += 4
+  doc.setFont("helvetica", "bold")
+  doc.setFontSize(10)
+  doc.text(`Recaudación total del día: ${formatCurrency(session.totalRaised)}`, 14, y)
+
+  y += 8
+
+  doc.setFont("helvetica", "bold")
+  doc.setFontSize(10)
+  doc.text("Detalles del turno", 14, y)
+  y += 5
+  doc.setFont("helvetica", "normal")
+  doc.setFontSize(9)
+  doc.text(`Caja inicial:     ${formatCurrency(session.openingCashAmount)}`, 14, y)
+  y += 4.5
+  doc.text(`Horario:          ${session.openedAt} - ${session.closedAt || "en curso"}`, 14, y)
+  y += 4.5
+  const diffLabel = session.differenceAmount != null
+    ? `${session.differenceAmount >= 0 ? "+" : ""}${formatCurrency(session.differenceAmount)}`
+    : "Pendiente"
+  doc.text(`Diferencia caja:  ${diffLabel}`, 14, y)
+
+  y += 7
+
+  doc.setFont("helvetica", "bold")
+  doc.setFontSize(10)
+  doc.text("Observaciones", 14, y)
+  doc.setFont("helvetica", "normal")
+  doc.setFontSize(9)
+
+  const openingNotes = (session as any).openingNotes || ""
+  const closingNotes = (session as any).closingNotes || ""
+  const notes = [openingNotes, closingNotes].filter(Boolean).join(" | ") || "Sin observaciones"
+  doc.text(notes, 14, y + 5, { maxWidth: 180 })
+
+  y += 14
+
+  if (y > 220) {
+    doc.addPage()
+    y = 20
+  }
+
+  doc.setFont("helvetica", "bold")
+  doc.setFontSize(10)
   doc.text("Ventas vinculadas", 14, y)
   autoTable(doc, {
     startY: y + 4,
@@ -355,14 +392,21 @@ export async function exportCashSessionPDF(session: CashSessionPDFData, title = 
       formatCurrency(sale.total),
     ]),
     theme: "grid",
-    headStyles: { fontSize: 8, fillColor: [59, 130, 246] },
+    headStyles: { fontSize: 8, fillColor: [80, 80, 80] },
     bodyStyles: { fontSize: 8 },
     margin: { left: 14 },
     tableWidth: 180,
   })
 
-  y = (doc as any).lastAutoTable.finalY + 8
-  doc.setFontSize(11)
+  y = (doc as any).lastAutoTable.finalY + 6
+
+  if (y > 260) {
+    doc.addPage()
+    y = 20
+  }
+
+  doc.setFont("helvetica", "bold")
+  doc.setFontSize(10)
   doc.text("Movimientos de caja", 14, y)
   autoTable(doc, {
     startY: y + 4,
@@ -375,7 +419,7 @@ export async function exportCashSessionPDF(session: CashSessionPDFData, title = 
       `${movement.type === "INCOME" ? "+" : "-"}${formatCurrency(movement.amount)}`,
     ]),
     theme: "grid",
-    headStyles: { fontSize: 8, fillColor: [59, 130, 246] },
+    headStyles: { fontSize: 8, fillColor: [80, 80, 80] },
     bodyStyles: { fontSize: 8 },
     margin: { left: 14 },
     tableWidth: 180,
