@@ -163,28 +163,27 @@ function getCashDifferenceMeta(difference: number | null | undefined): CashDiffe
 
 function CashBillBreakdownEditor({ breakdown, total, idPrefix, title, description, onChange }: CashBillBreakdownEditorProps) {
   return (
-    <div className="space-y-4">
-      <div className="space-y-1">
-        <p className="text-sm font-medium text-foreground">{title}</p>
-        <p className="text-sm text-muted-foreground">{description}</p>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+    <div className="space-y-2">
+      {title && <p className="text-xs font-medium text-foreground">{title}</p>}
+      {description && <p className="text-xs text-muted-foreground">{description}</p>}
+      <div className="grid gap-2 grid-cols-4">
         {CASH_BILL_DENOMINATIONS.map((denomination) => {
           const key = String(denomination) as keyof CashBillBreakdown
           const inputId = `${idPrefix}-${denomination}`
 
           return (
-            <div key={denomination} className="space-y-2 rounded-xl border border-border/70 p-3">
-              <Label htmlFor={inputId}>Billetes de {formatCurrency(denomination)}</Label>
+            <div key={denomination} className="space-y-1.5 rounded-lg border border-border/70 p-2">
+              <Label htmlFor={inputId} className="text-xs">$ {formatCurrency(denomination).replace("$", "")}</Label>
               <Input
                 id={inputId}
                 type="number"
                 min="0"
                 step="1"
+                className="h-8 text-sm"
                 value={breakdown[key]}
                 onChange={(event) => onChange(denomination, parseBillCount(event.target.value))}
               />
-              <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <div className="flex items-center justify-between text-[10px] text-muted-foreground">
                 <span>{breakdown[key]} x {formatCurrency(denomination)}</span>
                 <span>{formatCurrency(denomination * breakdown[key])}</span>
               </div>
@@ -192,7 +191,7 @@ function CashBillBreakdownEditor({ breakdown, total, idPrefix, title, descriptio
           )
         })}
       </div>
-      <div className="rounded-xl border border-border/70 bg-muted/20 p-4 text-sm">
+      <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2 text-xs">
         <div className="flex justify-between font-medium text-foreground">
           <span>Total contado</span>
           <span>{formatCurrency(total)}</span>
@@ -660,43 +659,43 @@ export default function DashboardPage() {
       </div>
 
       <Dialog open={openDialog} onOpenChange={setOpenDialog}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Abrir caja</DialogTitle>
-            <DialogDescription>Definí turno, fecha operativa, nombre de caja y contá cada billete del fondo inicial.</DialogDescription>
+            <DialogDescription>Turno, fecha, nombre y billetes del fondo inicial.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Nombre de caja</Label>
-              <Input value={registerLabel} onChange={(event) => setRegisterLabel(event.target.value)} placeholder="Ej: Caja Mostrador" />
-            </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label>Turno</Label>
-                <select value={shiftLabel} onChange={(event) => setShiftLabel(event.target.value as any)} className="w-full h-11 rounded-md border border-input bg-background px-3">
+          <div className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Nombre de caja</Label>
+                <Input value={registerLabel} onChange={(event) => setRegisterLabel(event.target.value)} placeholder="Ej: Caja Mostrador" className="h-8 text-sm" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Turno</Label>
+                <select value={shiftLabel} onChange={(event) => setShiftLabel(event.target.value as any)} className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm">
                   <option value="MANANA">Mañana</option>
                   <option value="TARDE">Tarde</option>
                   <option value="OTRO">Otro</option>
                 </select>
               </div>
-              <div className="space-y-2">
-                <Label>Fecha operativa</Label>
-                <Input type="date" value={businessDate} onChange={(event) => setBusinessDate(event.target.value)} />
-              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Fecha operativa</Label>
+              <Input type="date" value={businessDate} onChange={(event) => setBusinessDate(event.target.value)} className="h-8 text-sm" />
             </div>
             <CashBillBreakdownEditor
               breakdown={openingCashBreakdown}
               total={openingCashAmount}
               idPrefix="opening-bill"
-              title="Conteo de apertura"
-              description="Cargá la cantidad de billetes por denominación de $50 a $20.000."
+              title=""
+              description=""
               onChange={updateOpeningCashBreakdown}
             />
-            <div className="space-y-2">
-              <Label>Observaciones</Label>
-              <textarea value={openingNotes} onChange={(event) => setOpeningNotes(event.target.value)} className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2" />
+            <div className="space-y-1.5">
+              <Label className="text-xs">Observaciones</Label>
+              <textarea value={openingNotes} onChange={(event) => setOpeningNotes(event.target.value)} className="min-h-16 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm" />
             </div>
-            <Button className="w-full" onClick={handleOpenCashSession} disabled={submitting || !selectedLocationId || !registerLabel}>
+            <Button className="w-full h-8 text-sm" onClick={handleOpenCashSession} disabled={submitting || !selectedLocationId || !registerLabel}>
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Abrir caja"}
             </Button>
           </div>
@@ -704,36 +703,36 @@ export default function DashboardPage() {
       </Dialog>
 
       <Dialog open={closeDialog} onOpenChange={setCloseDialog}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Cerrar caja</DialogTitle>
             <DialogDescription>
-              Contá los billetes reales al cierre. Si hay diferencia, se guarda igual como sobrante o faltante.
+              Contá los billetes reales. Si hay diferencia, se guarda igual.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="rounded-xl border border-border/70 bg-muted/20 p-4 text-sm">
+          <div className="space-y-3">
+            <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2 text-xs">
               <div className="flex justify-between"><span>Efectivo esperado</span><span>{formatCurrency(selectedSession?.expectedCashAmount || 0)}</span></div>
-              <div className="mt-2 flex justify-between"><span>Efectivo contado</span><span>{formatCurrency(countedCashAmount)}</span></div>
-              <div className="mt-3 flex items-center justify-between gap-3">
-                <span className="text-muted-foreground">Estado del arqueo</span>
-                <Badge variant={closingDifferenceMeta.badgeVariant}>{closingDifferenceMeta.label}</Badge>
+              <div className="mt-1.5 flex justify-between"><span>Efectivo contado</span><span className="font-medium">{formatCurrency(countedCashAmount)}</span></div>
+              <div className="mt-2 flex items-center justify-between gap-3 border-t border-border/40 pt-2">
+                <span className="text-muted-foreground">Estado</span>
+                <Badge variant={closingDifferenceMeta.badgeVariant} className="text-[10px]">{closingDifferenceMeta.label}</Badge>
               </div>
-              <p className="mt-2 text-xs text-muted-foreground">{closingDifferenceMeta.helper}</p>
+              <p className="mt-1 text-[10px] text-muted-foreground">{closingDifferenceMeta.helper}</p>
             </div>
             <CashBillBreakdownEditor
               breakdown={closingCashBreakdown}
               total={countedCashAmount}
               idPrefix="closing-bill"
-              title="Conteo de cierre"
-              description="Cargá la cantidad final de billetes por denominación."
+              title=""
+              description=""
               onChange={updateClosingCashBreakdown}
             />
-            <div className="space-y-2">
-              <Label>Observaciones de cierre</Label>
-              <textarea value={closingNotes} onChange={(event) => setClosingNotes(event.target.value)} className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2" />
+            <div className="space-y-1.5">
+              <Label className="text-xs">Observaciones</Label>
+              <textarea value={closingNotes} onChange={(event) => setClosingNotes(event.target.value)} className="min-h-16 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm" />
             </div>
-            <Button className="w-full" onClick={handleCloseCashSession} disabled={submitting || !selectedSession}>
+            <Button className="w-full h-8 text-sm" onClick={handleCloseCashSession} disabled={submitting || !selectedSession}>
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Cerrar caja"}
             </Button>
           </div>
