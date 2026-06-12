@@ -3,34 +3,56 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { resolveSessionUserId } from "@/lib/auth/session-user"
+import {
+  calculateCashBillBreakdownTotal,
+  CASH_BILL_DENOMINATIONS,
+  parseCashBillBreakdown,
+  type CashBillBreakdown,
+} from "@/lib/cash-bill-breakdown"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
 const db = prisma as any
+
+const cashBillBreakdownSchema = z.object(
+  Object.fromEntries(
+    CASH_BILL_DENOMINATIONS.map((denomination) => [
+      String(denomination),
+      z.coerce.number().int().min(0, "Cantidad inválida").default(0),
+    ])
+  ) as Record<string, z.ZodTypeAny>
+)
 
 const openCashSessionSchema = z.object({
   locationId: z.string().min(1, "Sucursal requerida"),
   registerLabel: z.string().min(1, "Nombre de caja requerido").max(80),
   shiftLabel: z.enum(["MANANA", "TARDE", "OTRO"]),
   businessDate: z.string().optional(),
-  openingCashAmount: z.coerce.number().min(0, "Monto inicial inválido"),
+  openingCashBreakdown: cashBillBreakdownSchema,
   openingNotes: z.string().optional(),
 })
 
 const closeCashSessionSchema = z.object({
   cashSessionId: z.string().min(1),
-  countedCashAmount: z.coerce.number().min(0, "Conteo inválido"),
+  closingCashBreakdown: cashBillBreakdownSchema,
   closingNotes: z.string().optional(),
 })
 
-const cashMovementSchema = z.object({
-  cashSessionId: z.string().min(1),
+const cashMovementBaseSchema = z.object({
   type: z.enum(["INCOME", "EXPENSE"]),
   category: z.enum(["INGRESO_MANUAL", "EGRESO_MANUAL", "RETIRO", "GASTO", "PAGO_PROVEEDOR", "AJUSTE"]),
   paymentMethod: z.enum(["CASH", "CARD", "TRANSFER", "OTHER"]),
   amount: z.coerce.number().positive("Monto inválido"),
   description: z.string().min(1, "Detalle requerido").max(300),
   purchaseOrderId: z.string().optional(),
+})
+
+const cashMovementSchema = cashMovementBaseSchema.extend({
+  cashSessionId: z.string().min(1),
+})
+
+const generalCashMovementSchema = cashMovementBaseSchema.extend({
+  locationId: z.string().min(1, "Sucursal requerida"),
 })
 
 function normalizeBusinessDate(value?: string) {
@@ -64,6 +86,13 @@ async function requireCurrentUserId() {
   }
 
   return userId
+}
+
+function normalizeCashMovement(movement: any) {
+  return {
+    ...movement,
+    amount: Number(movement.amount),
+  }
 }
 
 export async function getCashSessionSummary(cashSessionId: string) {
@@ -135,9 +164,13 @@ export async function getCashSessionSummary(cashSessionId: string) {
     .reduce((sum: number, movement: any) => sum + Number(movement.amount), 0)
 
   const expectedCash = Number(session.openingCashAmount) + salesBreakdown.CASH + externalCashIncome - externalCashExpense
-  const countedCash = session.countedCashAmount ? Number(session.countedCashAmount) : null
+  const countedCash = session.countedCashAmount !== null && session.countedCashAmount !== undefined
+    ? Number(session.countedCashAmount)
+    : null
   const difference = countedCash !== null ? countedCash - expectedCash : null
   const totalRaised = Object.values(salesBreakdown).reduce((sum, amount) => sum + amount, 0)
+  const openingCashBreakdown = parseCashBillBreakdown(session.openingCashBreakdown)
+  const closingCashBreakdown = parseCashBillBreakdown(session.closingCashBreakdown)
 
   return {
     id: session.id,
@@ -153,6 +186,8 @@ export async function getCashSessionSummary(cashSessionId: string) {
     countedCashAmount: countedCash,
     expectedCashAmount: expectedCash,
     differenceAmount: difference,
+    openingCashBreakdown,
+    closingCashBreakdown,
     openingNotes: session.openingNotes,
     closingNotes: session.closingNotes,
     openedBy: session.openedBy,
@@ -167,10 +202,7 @@ export async function getCashSessionSummary(cashSessionId: string) {
       ...sale,
       total: Number(sale.total),
     })),
-    movements: movements.map((movement: any) => ({
-      ...movement,
-      amount: Number(movement.amount),
-    })),
+    movements: movements.map(normalizeCashMovement),
   }
 }
 
@@ -192,6 +224,7 @@ export async function openCashSession(input: z.infer<typeof openCashSessionSchem
     const userId = await requireCurrentUserId()
     const parsed = openCashSessionSchema.parse(input)
     const businessDate = normalizeBusinessDate(parsed.businessDate)
+    const openingCashAmount = calculateCashBillBreakdownTotal(parsed.openingCashBreakdown as CashBillBreakdown)
 
     const session = await prisma.$transaction(async (tx) => {
       const txDb = tx as any
@@ -202,7 +235,8 @@ export async function openCashSession(input: z.infer<typeof openCashSessionSchem
           registerLabel: parsed.registerLabel,
           shiftLabel: parsed.shiftLabel,
           businessDate,
-          openingCashAmount: parsed.openingCashAmount,
+          openingCashAmount,
+          openingCashBreakdown: parsed.openingCashBreakdown,
           openingNotes: parsed.openingNotes || null,
         },
       })
@@ -215,7 +249,7 @@ export async function openCashSession(input: z.infer<typeof openCashSessionSchem
           type: "INCOME",
           category: "APERTURA",
           paymentMethod: "CASH",
-          amount: parsed.openingCashAmount,
+          amount: openingCashAmount,
           description: parsed.openingNotes || "Apertura de caja",
         },
       })
@@ -242,7 +276,8 @@ export async function closeCashSession(input: z.infer<typeof closeCashSessionSch
     }
 
     const expectedCashAmount = summary.expectedCashAmount
-    const differenceAmount = parsed.countedCashAmount - expectedCashAmount
+    const countedCashAmount = calculateCashBillBreakdownTotal(parsed.closingCashBreakdown as CashBillBreakdown)
+    const differenceAmount = countedCashAmount - expectedCashAmount
 
     await db.cashSession.update({
       where: { id: parsed.cashSessionId },
@@ -250,7 +285,8 @@ export async function closeCashSession(input: z.infer<typeof closeCashSessionSch
         status: "CLOSED",
         closedByUserId: userId,
         closedAt: new Date(),
-        countedCashAmount: parsed.countedCashAmount,
+        countedCashAmount,
+        closingCashBreakdown: parsed.closingCashBreakdown,
         expectedCashAmount,
         differenceAmount,
         closingNotes: parsed.closingNotes || null,
@@ -303,5 +339,60 @@ export async function createCashMovement(input: z.infer<typeof cashMovementSchem
     return { success: true, data: await getCashSessionSummary(parsed.cashSessionId) }
   } catch (error: any) {
     return { success: false, error: error.message || "Error al registrar movimiento" }
+  }
+}
+
+export async function getGeneralCashMovements(locationId?: string) {
+  const movements = await db.cashMovement.findMany({
+    where: {
+      cashSessionId: null,
+      ...(locationId ? { locationId } : {}),
+    },
+    include: {
+      location: { select: { id: true, name: true } },
+      user: { select: { name: true, email: true } },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+  })
+
+  return movements.map((movement: any) => ({
+    ...normalizeCashMovement(movement),
+    locationName: movement.location.name,
+  }))
+}
+
+export async function createGeneralCashMovement(input: z.infer<typeof generalCashMovementSchema>) {
+  try {
+    const userId = await requireCurrentUserId()
+    const parsed = generalCashMovementSchema.parse(input)
+
+    const location = await db.location.findUnique({
+      where: { id: parsed.locationId },
+      select: { id: true },
+    })
+
+    if (!location) {
+      return { success: false, error: "Sucursal no encontrada" }
+    }
+
+    await db.cashMovement.create({
+      data: {
+        cashSessionId: null,
+        locationId: parsed.locationId,
+        userId,
+        type: parsed.type,
+        category: parsed.category,
+        paymentMethod: parsed.paymentMethod,
+        amount: parsed.amount,
+        description: parsed.description,
+        purchaseOrderId: parsed.purchaseOrderId || null,
+      },
+    })
+
+    revalidatePath("/cash-movements")
+    return { success: true, data: await getGeneralCashMovements(parsed.locationId) }
+  } catch (error: any) {
+    return { success: false, error: error.message || "Error al registrar movimiento general" }
   }
 }

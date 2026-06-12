@@ -30,6 +30,14 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  calculateCashBillBreakdownTotal,
+  CASH_BILL_DENOMINATIONS,
+  createEmptyCashBillBreakdown,
+  hasCashBillBreakdown,
+  type CashBillBreakdown,
+  type CashBillDenomination,
+} from "@/lib/cash-bill-breakdown"
 import { exportCashSessionPDF } from "@/lib/reports/pdf-export"
 
 type DashboardMetrics = {
@@ -57,7 +65,9 @@ type CashSessionSummary = {
   openedAt: string | Date
   closedAt?: string | Date | null
   openingCashAmount: number
+  openingCashBreakdown: CashBillBreakdown | null
   countedCashAmount: number | null
+  closingCashBreakdown: CashBillBreakdown | null
   expectedCashAmount: number
   differenceAmount: number | null
   openingNotes?: string | null
@@ -97,6 +107,131 @@ function getTodayDateInputValue() {
   return `${year}-${month}-${day}`
 }
 
+function parseBillCount(value: string) {
+  if (!value) return 0
+
+  const normalized = Math.floor(Number(value))
+  return Number.isFinite(normalized) && normalized > 0 ? normalized : 0
+}
+
+type CashBillBreakdownEditorProps = {
+  breakdown: CashBillBreakdown
+  total: number
+  idPrefix: string
+  title: string
+  description: string
+  onChange: (denomination: CashBillDenomination, value: number) => void
+}
+
+type CashDifferenceMeta = {
+  label: string
+  helper: string
+  badgeVariant: "outline" | "success" | "warning" | "destructive"
+}
+
+function getCashDifferenceMeta(difference: number | null | undefined): CashDifferenceMeta {
+  if (difference === null || difference === undefined) {
+    return {
+      label: "Arqueo pendiente",
+      helper: "Todavía no se declaró el conteo final de la caja.",
+      badgeVariant: "outline",
+    }
+  }
+
+  if (difference === 0) {
+    return {
+      label: "Arqueo en 0",
+      helper: "La caja cuadra exacta, sin sobrantes ni faltantes.",
+      badgeVariant: "success",
+    }
+  }
+
+  if (difference > 0) {
+    return {
+      label: `Sobrante ${formatCurrency(difference)}`,
+      helper: "Se contó más efectivo del esperado para esta caja.",
+      badgeVariant: "warning",
+    }
+  }
+
+  return {
+    label: `Faltante ${formatCurrency(Math.abs(difference))}`,
+    helper: "Se contó menos efectivo del esperado para esta caja.",
+    badgeVariant: "destructive",
+  }
+}
+
+function CashBillBreakdownEditor({ breakdown, total, idPrefix, title, description, onChange }: CashBillBreakdownEditorProps) {
+  return (
+    <div className="space-y-4">
+      <div className="space-y-1">
+        <p className="text-sm font-medium text-foreground">{title}</p>
+        <p className="text-sm text-muted-foreground">{description}</p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {CASH_BILL_DENOMINATIONS.map((denomination) => {
+          const key = String(denomination) as keyof CashBillBreakdown
+          const inputId = `${idPrefix}-${denomination}`
+
+          return (
+            <div key={denomination} className="space-y-2 rounded-xl border border-border/70 p-3">
+              <Label htmlFor={inputId}>Billetes de {formatCurrency(denomination)}</Label>
+              <Input
+                id={inputId}
+                type="number"
+                min="0"
+                step="1"
+                value={breakdown[key]}
+                onChange={(event) => onChange(denomination, parseBillCount(event.target.value))}
+              />
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>{breakdown[key]} x {formatCurrency(denomination)}</span>
+                <span>{formatCurrency(denomination * breakdown[key])}</span>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      <div className="rounded-xl border border-border/70 bg-muted/20 p-4 text-sm">
+        <div className="flex justify-between font-medium text-foreground">
+          <span>Total contado</span>
+          <span>{formatCurrency(total)}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CashBillBreakdownSummary({ breakdown, title }: { breakdown: CashBillBreakdown | null; title: string }) {
+  if (!hasCashBillBreakdown(breakdown)) {
+    return null
+  }
+
+  const persistedBreakdown = breakdown as CashBillBreakdown
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>Conteo guardado por denominación.</CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {CASH_BILL_DENOMINATIONS.map((denomination) => {
+          const count = persistedBreakdown[String(denomination) as keyof CashBillBreakdown]
+
+          return (
+            <div key={denomination} className="rounded-xl border border-border/70 p-3 text-sm">
+              <p className="text-muted-foreground">{formatCurrency(denomination)}</p>
+              <p className="mt-1 font-semibold text-foreground">{count} billete{count === 1 ? "" : "s"}</p>
+              <p className="mt-1 text-xs text-muted-foreground">Subtotal: {formatCurrency(denomination * count)}</p>
+            </div>
+          )
+        })}
+      </CardContent>
+    </Card>
+  )
+}
+
 export default function DashboardPage() {
   const [locations, setLocations] = useState<Location[]>([])
   const [selectedLocationId, setSelectedLocationId] = useState("")
@@ -111,11 +246,11 @@ export default function DashboardPage() {
   const [registerLabel, setRegisterLabel] = useState("")
   const [shiftLabel, setShiftLabel] = useState<"MANANA" | "TARDE" | "OTRO">("MANANA")
   const [businessDate, setBusinessDate] = useState(getTodayDateInputValue())
-  const [openingCashAmount, setOpeningCashAmount] = useState("0")
+  const [openingCashBreakdown, setOpeningCashBreakdown] = useState<CashBillBreakdown>(() => createEmptyCashBillBreakdown())
   const [openingNotes, setOpeningNotes] = useState("")
 
   const [closeDialog, setCloseDialog] = useState(false)
-  const [countedCashAmount, setCountedCashAmount] = useState("")
+  const [closingCashBreakdown, setClosingCashBreakdown] = useState<CashBillBreakdown>(() => createEmptyCashBillBreakdown())
   const [closingNotes, setClosingNotes] = useState("")
 
   const [movementDialog, setMovementDialog] = useState(false)
@@ -165,6 +300,24 @@ export default function DashboardPage() {
     () => sessions.find((session) => session.id === selectedSessionId) || null,
     [sessions, selectedSessionId]
   )
+  const openingCashAmount = calculateCashBillBreakdownTotal(openingCashBreakdown)
+  const countedCashAmount = calculateCashBillBreakdownTotal(closingCashBreakdown)
+  const closingDifferenceAmount = selectedSession ? countedCashAmount - selectedSession.expectedCashAmount : null
+  const closingDifferenceMeta = getCashDifferenceMeta(closingDifferenceAmount)
+
+  function updateOpeningCashBreakdown(denomination: CashBillDenomination, value: number) {
+    setOpeningCashBreakdown((current) => ({
+      ...current,
+      [String(denomination)]: value,
+    }))
+  }
+
+  function updateClosingCashBreakdown(denomination: CashBillDenomination, value: number) {
+    setClosingCashBreakdown((current) => ({
+      ...current,
+      [String(denomination)]: value,
+    }))
+  }
 
   async function refreshSessions() {
     if (!selectedLocationId) return
@@ -188,7 +341,7 @@ export default function DashboardPage() {
       registerLabel,
       shiftLabel,
       businessDate,
-      openingCashAmount: Number(openingCashAmount),
+      openingCashBreakdown,
       openingNotes,
     })
     setSubmitting(false)
@@ -200,7 +353,7 @@ export default function DashboardPage() {
 
     setOpenDialog(false)
     setRegisterLabel("")
-    setOpeningCashAmount("0")
+    setOpeningCashBreakdown(createEmptyCashBillBreakdown())
     setOpeningNotes("")
     await refreshSessions()
   }
@@ -210,7 +363,7 @@ export default function DashboardPage() {
     setSubmitting(true)
     const result = await closeCashSession({
       cashSessionId: selectedSession.id,
-      countedCashAmount: Number(countedCashAmount),
+      closingCashBreakdown,
       closingNotes,
     })
     setSubmitting(false)
@@ -221,7 +374,7 @@ export default function DashboardPage() {
     }
 
     setCloseDialog(false)
-    setCountedCashAmount("")
+    setClosingCashBreakdown(createEmptyCashBillBreakdown())
     setClosingNotes("")
     await refreshSessions()
   }
@@ -367,8 +520,10 @@ export default function DashboardPage() {
                       openedAt: formatDate(selectedSession.openedAt),
                       closedAt: selectedSession.closedAt ? formatDate(selectedSession.closedAt) : null,
                       openingCashAmount: selectedSession.openingCashAmount,
+                      openingCashBreakdown: selectedSession.openingCashBreakdown,
                       expectedCashAmount: selectedSession.expectedCashAmount,
                       countedCashAmount: selectedSession.countedCashAmount,
+                      closingCashBreakdown: selectedSession.closingCashBreakdown,
                       differenceAmount: selectedSession.differenceAmount,
                       totalRaised: selectedSession.totalRaised,
                       salesCount: selectedSession.salesCount,
@@ -391,7 +546,7 @@ export default function DashboardPage() {
                   </Button>
                   <Button variant="outline" onClick={() => setMovementDialog(true)}>Registrar movimiento</Button>
                   <Button onClick={() => {
-                    setCountedCashAmount(String(selectedSession.expectedCashAmount))
+                    setClosingCashBreakdown(createEmptyCashBillBreakdown())
                     setCloseDialog(true)
                   }}>
                     Cerrar caja
@@ -439,6 +594,8 @@ export default function DashboardPage() {
                   ))}
                 </CardContent>
               </Card>
+
+              <CashBillBreakdownSummary breakdown={selectedSession.openingCashBreakdown} title="Fondo inicial por billete" />
             </div>
 
             <div className="grid gap-6 xl:grid-cols-2">
@@ -506,7 +663,7 @@ export default function DashboardPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Abrir caja</DialogTitle>
-            <DialogDescription>Definí turno, fecha operativa, nombre de caja y monto inicial.</DialogDescription>
+            <DialogDescription>Definí turno, fecha operativa, nombre de caja y contá cada billete del fondo inicial.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
@@ -527,10 +684,14 @@ export default function DashboardPage() {
                 <Input type="date" value={businessDate} onChange={(event) => setBusinessDate(event.target.value)} />
               </div>
             </div>
-            <div className="space-y-2">
-              <Label>Monto inicial en efectivo</Label>
-              <Input type="number" min="0" step="0.01" value={openingCashAmount} onChange={(event) => setOpeningCashAmount(event.target.value)} />
-            </div>
+            <CashBillBreakdownEditor
+              breakdown={openingCashBreakdown}
+              total={openingCashAmount}
+              idPrefix="opening-bill"
+              title="Conteo de apertura"
+              description="Cargá la cantidad de billetes por denominación de $50 a $20.000."
+              onChange={updateOpeningCashBreakdown}
+            />
             <div className="space-y-2">
               <Label>Observaciones</Label>
               <textarea value={openingNotes} onChange={(event) => setOpeningNotes(event.target.value)} className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2" />
@@ -547,17 +708,27 @@ export default function DashboardPage() {
           <DialogHeader>
             <DialogTitle>Cerrar caja</DialogTitle>
             <DialogDescription>
-              Ingresá el efectivo contado real. Si hay diferencia, se guarda igual como sobrante o faltante.
+              Contá los billetes reales al cierre. Si hay diferencia, se guarda igual como sobrante o faltante.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="rounded-xl border border-border/70 bg-muted/20 p-4 text-sm">
               <div className="flex justify-between"><span>Efectivo esperado</span><span>{formatCurrency(selectedSession?.expectedCashAmount || 0)}</span></div>
+              <div className="mt-2 flex justify-between"><span>Efectivo contado</span><span>{formatCurrency(countedCashAmount)}</span></div>
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <span className="text-muted-foreground">Estado del arqueo</span>
+                <Badge variant={closingDifferenceMeta.badgeVariant}>{closingDifferenceMeta.label}</Badge>
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">{closingDifferenceMeta.helper}</p>
             </div>
-            <div className="space-y-2">
-              <Label>Efectivo contado</Label>
-              <Input type="number" min="0" step="0.01" value={countedCashAmount} onChange={(event) => setCountedCashAmount(event.target.value)} />
-            </div>
+            <CashBillBreakdownEditor
+              breakdown={closingCashBreakdown}
+              total={countedCashAmount}
+              idPrefix="closing-bill"
+              title="Conteo de cierre"
+              description="Cargá la cantidad final de billetes por denominación."
+              onChange={updateClosingCashBreakdown}
+            />
             <div className="space-y-2">
               <Label>Observaciones de cierre</Label>
               <textarea value={closingNotes} onChange={(event) => setClosingNotes(event.target.value)} className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2" />

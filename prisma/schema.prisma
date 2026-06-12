@@ -249,7 +249,9 @@ model CashSession {
   status                CashSessionStatus @default(OPEN)
   businessDate          DateTime
   openingCashAmount     Decimal           @db.Decimal(10, 2)
+  openingCashBreakdown  Json?
   countedCashAmount     Decimal?          @db.Decimal(10, 2)
+  closingCashBreakdown  Json?
   expectedCashAmount    Decimal?          @db.Decimal(10, 2)
   differenceAmount      Decimal?          @db.Decimal(10, 2)
   openingNotes          String?           @db.Text
@@ -271,7 +273,7 @@ model CashSession {
 
 model CashMovement {
   id              String               @id @default(cuid())
-  cashSessionId   String
+  cashSessionId   String?
   locationId      String
   userId          String
   type            CashMovementType
@@ -282,7 +284,7 @@ model CashMovement {
   createdAt       DateTime             @default(now())
   purchaseOrderId String?
 
-  cashSession   CashSession   @relation(fields: [cashSessionId], references: [id], onDelete: Cascade)
+  cashSession   CashSession?   @relation(fields: [cashSessionId], references: [id], onDelete: Cascade)
   location      Location      @relation(fields: [locationId], references: [id])
   user          User          @relation(fields: [userId], references: [id])
   purchaseOrder PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])

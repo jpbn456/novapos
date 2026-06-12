@@ -1,4 +1,9 @@
 import type { SalesReportGroup, PurchaseReportGroup } from "@/lib/types/reports"
+import {
+  calculateCashBillBreakdownTotal,
+  CASH_BILL_DENOMINATIONS,
+  type CashBillBreakdown,
+} from "@/lib/cash-bill-breakdown"
 
 export type SalePDFData = SalesReportGroup
 
@@ -34,8 +39,10 @@ export type CashSessionPDFData = {
   openedAt: string
   closedAt?: string | null
   openingCashAmount: number
+  openingCashBreakdown: CashBillBreakdown | null
   expectedCashAmount: number
   countedCashAmount: number | null
+  closingCashBreakdown: CashBillBreakdown | null
   differenceAmount: number | null
   totalRaised: number
   salesCount: number
@@ -268,6 +275,11 @@ export async function exportPurchaseOrderPDF(order: PurchaseOrderPDFData, title 
 export async function exportCashSessionPDF(session: CashSessionPDFData, title = `caja-${session.registerLabel}`) {
   const { jsPDF, autoTable } = await loadPdfTools()
   const doc = new jsPDF({ unit: "mm", format: "a4" })
+  const breakdownRows = CASH_BILL_DENOMINATIONS.map((denomination) => [
+    formatCurrency(denomination),
+    session.openingCashBreakdown ? String(session.openingCashBreakdown[String(denomination) as keyof CashBillBreakdown]) : "-",
+    session.closingCashBreakdown ? String(session.closingCashBreakdown[String(denomination) as keyof CashBillBreakdown]) : "-",
+  ])
 
   doc.setFontSize(16)
   doc.text(`Caja ${session.registerLabel}`, 14, 20)
@@ -295,7 +307,7 @@ export async function exportCashSessionPDF(session: CashSessionPDFData, title = 
 
   autoTable(doc, {
     startY: 42,
-    margin: { left: 112 },
+    margin: { left: 108 },
     head: [["Medio", "Ventas", "Ingresos", "Egresos"]],
     body: (["CASH", "CARD", "TRANSFER", "OTHER"] as const).map((method) => [
       method,
@@ -306,10 +318,30 @@ export async function exportCashSessionPDF(session: CashSessionPDFData, title = 
     theme: "grid",
     headStyles: { fontSize: 8, fillColor: [59, 130, 246] },
     bodyStyles: { fontSize: 8 },
-    tableWidth: 88,
+    tableWidth: 92,
   })
 
   let y = Math.max((doc as any).lastAutoTable.finalY + 8, 88)
+
+  autoTable(doc, {
+    startY: y,
+    head: [["Denominación", "Apertura", "Cierre"]],
+    body: [
+      ...breakdownRows,
+      [
+        "Total",
+        session.openingCashBreakdown ? formatCurrency(calculateCashBillBreakdownTotal(session.openingCashBreakdown)) : "-",
+        session.closingCashBreakdown ? formatCurrency(calculateCashBillBreakdownTotal(session.closingCashBreakdown)) : "-",
+      ],
+    ],
+    theme: "grid",
+    headStyles: { fontSize: 8, fillColor: [59, 130, 246] },
+    bodyStyles: { fontSize: 8 },
+    margin: { left: 14 },
+    tableWidth: 180,
+  })
+
+  y = (doc as any).lastAutoTable.finalY + 8
 
   doc.setFontSize(11)
   doc.text("Ventas vinculadas", 14, y)
