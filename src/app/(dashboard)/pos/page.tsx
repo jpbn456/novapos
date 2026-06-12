@@ -707,10 +707,7 @@ function POSContent() {
                           onClick={() => addItem(product)}
                           className="group flex min-h-36 flex-col rounded-2xl border border-border/70 bg-muted/10 p-4 text-left transition-colors hover:bg-secondary/22 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
-                          <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
-                            <Badge variant="secondary" className="min-h-8 px-2.5">ID {product.productNumber}</Badge>
-                            {product.barcode ? <span className="max-w-full truncate text-xs text-muted-foreground">{product.barcode}</span> : null}
-                          </div>
+                          {product.barcode ? <div className="mb-4 flex flex-wrap items-start justify-between gap-2"><span className="max-w-full truncate text-xs text-muted-foreground">{product.barcode}</span></div> : null}
                           <p className="line-clamp-2 font-medium text-foreground">{product.name}</p>
                           <p className="mt-auto pt-4 text-lg font-semibold text-foreground">{formatCurrency(product.price)}</p>
                         </button>
