@@ -276,126 +276,191 @@ export async function exportCashSessionPDF(session: CashSessionPDFData, title = 
   const { jsPDF, autoTable } = await loadPdfTools()
   const doc = new jsPDF({ unit: "mm", format: "a4" })
 
+  const HEADER_BG = [30, 64, 100] as const
+  const ACCENT = [70, 130, 180] as const
+  const LIGHT_BG = [245, 247, 250] as const
+
+  const pageW = 210
+  const marginL = 16
+  const tableW = pageW - marginL * 2
+
   const openingTotal = session.openingCashBreakdown
     ? calculateCashBillBreakdownTotal(session.openingCashBreakdown) : 0
   const closingTotal = session.closingCashBreakdown
     ? calculateCashBillBreakdownTotal(session.closingCashBreakdown) : 0
 
-  doc.setFontSize(14)
-  doc.text("Registro de Caja", 14, 18)
-  doc.setFontSize(9)
-  doc.text(`${session.locationName} | ${session.registerLabel} | turno ${session.shiftLabel.toLowerCase()}`, 14, 25)
-  doc.text(`Fecha: ${session.businessDate}`, 14, 30)
+  function sectionTitle(text: string, y: number) {
+    doc.setFillColor(...HEADER_BG)
+    doc.rect(marginL, y - 5, tableW, 7, "F")
+    doc.setTextColor(255, 255, 255)
+    doc.setFont("helvetica", "bold")
+    doc.setFontSize(9)
+    doc.text(text, marginL + 3, y)
+    doc.setTextColor(0, 0, 0)
+    return y + 9
+  }
+
+  function keyValue(label: string, value: string, y: number) {
+    doc.setFont("helvetica", "normal")
+    doc.setFontSize(9)
+    doc.text(label, marginL + 2, y)
+    doc.setFont("helvetica", "bold")
+    doc.text(value, marginL + 70, y)
+    return y + 5
+  }
+
+  function divider(y: number) {
+    doc.setDrawColor(200, 200, 200)
+    doc.line(marginL, y, marginL + tableW, y)
+    return y + 3
+  }
+
+  doc.setFillColor(...HEADER_BG)
+  doc.rect(0, 0, pageW, 28, "F")
+  doc.setTextColor(255, 255, 255)
+  doc.setFont("helvetica", "bold")
+  doc.setFontSize(16)
+  doc.text("Registro de Caja", marginL, 12)
+  doc.setFont("helvetica", "normal")
+  doc.setFontSize(8)
+  doc.text(`${session.locationName} · ${session.registerLabel} · turno ${session.shiftLabel.toLowerCase()}`, marginL, 21)
+  doc.setTextColor(0, 0, 0)
 
   let y = 38
+  const diffLabel = session.differenceAmount != null
+    ? `${session.differenceAmount >= 0 ? "+" : ""}${formatCurrency(session.differenceAmount)}`
+    : "Pendiente"
+  const diffColor = session.differenceAmount != null
+    ? (session.differenceAmount >= 0 ? [22, 163, 74] : [220, 38, 38])
+    : [100, 100, 100]
+
+  doc.setFont("helvetica", "normal")
+  doc.setFontSize(8)
+  doc.setTextColor(100, 100, 100)
+  doc.text(`Fecha: ${session.businessDate}`, marginL + tableW - 40, 36, { align: "right" })
+  doc.text(`Estado: ${session.status === "CLOSED" ? "Cerrada" : "Abierta"}`, marginL + tableW - 40, 31, { align: "right" })
+  doc.setTextColor(0, 0, 0)
+
+  y = sectionTitle("Billetes", y)
 
   autoTable(doc, {
     startY: y,
-    head: [["Billetes", "Inicio (cant)", "Inicio ($)", "Final (cant)", "Final ($)"]],
+    head: [["Denominación", "Inicio (cant)", "Inicio ($)", "Final (cant)", "Final ($)"]],
     body: [
       ...CASH_BILL_DENOMINATIONS.map((denomination) => {
         const openingCount = session.openingCashBreakdown
           ? session.openingCashBreakdown[String(denomination) as keyof CashBillBreakdown] : 0
         const closingCount = session.closingCashBreakdown
           ? session.closingCashBreakdown[String(denomination) as keyof CashBillBreakdown] : 0
+        const label = "$" + formatCurrency(denomination).replace("$", "").trim()
         return [
-          formatCurrency(denomination),
+          label,
           String(openingCount),
           formatCurrency(denomination * openingCount),
           String(closingCount),
           formatCurrency(denomination * closingCount),
         ]
       }),
+    ],
+    foot: [
       [
-        { content: "Total efectivo", colSpan: 1, styles: { fontStyle: "bold" } },
+        { content: "Total efectivo", styles: { fontStyle: "bold", fontSize: 9 } as any },
         "",
-        { content: formatCurrency(openingTotal), styles: { fontStyle: "bold" } },
+        { content: formatCurrency(openingTotal), styles: { fontStyle: "bold", fontSize: 9 } as any },
         "",
-        { content: formatCurrency(closingTotal), styles: { fontStyle: "bold" } },
+        { content: formatCurrency(closingTotal), styles: { fontStyle: "bold", fontSize: 9 } as any },
       ],
     ],
     theme: "grid",
-    headStyles: { fontSize: 8, fillColor: [80, 80, 80] },
-    bodyStyles: { fontSize: 8 },
-    margin: { left: 14 },
-    tableWidth: 180,
+    headStyles: { fontSize: 7, fillColor: [...ACCENT], textColor: [255, 255, 255], halign: "center" },
+    bodyStyles: { fontSize: 8, halign: "center" },
+    footStyles: { fontSize: 8, halign: "center", fillColor: [240, 244, 248] },
+    columnStyles: { 0: { halign: "left", cellPadding: { left: 4 } } },
+    margin: { left: marginL },
+    tableWidth: tableW,
   })
 
-  y = (doc as any).lastAutoTable.finalY + 6
+  y = (doc as any).lastAutoTable.finalY + 8
 
-  doc.setFontSize(10)
+  y = sectionTitle("Resumen de recaudación", y)
+
+  doc.setFillColor(...LIGHT_BG)
+  doc.rect(marginL, y - 2, tableW, 30, "F")
+
+  let ry = y + 1
+  ry = keyValue("Efectivo:", formatCurrency(session.salesBreakdown.CASH), ry)
+  ry = keyValue("Transferencia:", formatCurrency(session.salesBreakdown.TRANSFER), ry)
+  ry = keyValue("Otros:", formatCurrency(session.salesBreakdown.OTHER + session.salesBreakdown.CARD), ry)
+  doc.setDrawColor(...ACCENT)
+  doc.setLineWidth(0.5)
+  doc.line(marginL + 2, ry, marginL + tableW - 2, ry)
+  ry += 3
   doc.setFont("helvetica", "bold")
-  doc.text("Resumen de recaudación", 14, y)
-  y += 5
+  doc.setFontSize(10)
+  doc.text("Recaudación total del día:", marginL + 2, ry)
+  doc.setTextColor(...ACCENT)
+  doc.text(formatCurrency(session.totalRaised), marginL + tableW - 4, ry, { align: "right" })
+  doc.setTextColor(0, 0, 0)
+
+  y = ry + 10
+
+  y = sectionTitle("Detalles del turno", y)
+
+  ry = y
+  ry = keyValue("Caja inicial:", formatCurrency(session.openingCashAmount), ry)
+  ry = keyValue("Horario:", `${session.openedAt} - ${session.closedAt || "en curso"}`, ry)
+
+  doc.setDrawColor(220, 220, 220)
+  doc.line(marginL + 2, ry, marginL + tableW - 2, ry)
+  ry += 3
   doc.setFont("helvetica", "normal")
   doc.setFontSize(9)
-  doc.text(`Total efectivo:      ${formatCurrency(session.salesBreakdown.CASH)}`, 14, y)
-  y += 4.5
-  doc.text(`Total transferencia: ${formatCurrency(session.salesBreakdown.TRANSFER)}`, 14, y)
-  y += 4.5
-  doc.text(`Total otro:          ${formatCurrency(session.salesBreakdown.OTHER)}`, 14, y)
-  y += 4.5
-  doc.setDrawColor(150, 150, 150)
-  doc.line(14, y, 80, y)
-  y += 4
+  doc.text("Diferencia de caja:", marginL + 2, ry)
+  doc.setTextColor(diffColor[0], diffColor[1], diffColor[2])
   doc.setFont("helvetica", "bold")
   doc.setFontSize(10)
-  doc.text(`Recaudación total del día: ${formatCurrency(session.totalRaised)}`, 14, y)
+  doc.text(diffLabel, marginL + tableW - 4, ry, { align: "right" })
+  doc.setTextColor(0, 0, 0)
 
-  y += 8
+  y = ry + 10
 
-  doc.setFont("helvetica", "bold")
-  doc.setFontSize(10)
-  doc.text("Detalles del turno", 14, y)
-  y += 5
-  doc.setFont("helvetica", "normal")
-  doc.setFontSize(9)
-  doc.text(`Caja inicial:     ${formatCurrency(session.openingCashAmount)}`, 14, y)
-  y += 4.5
-  doc.text(`Horario:          ${session.openedAt} - ${session.closedAt || "en curso"}`, 14, y)
-  y += 4.5
-  const diffLabel = session.differenceAmount != null
-    ? `${session.differenceAmount >= 0 ? "+" : ""}${formatCurrency(session.differenceAmount)}`
-    : "Pendiente"
-  doc.text(`Diferencia caja:  ${diffLabel}`, 14, y)
-
-  y += 7
-
-  doc.setFont("helvetica", "bold")
-  doc.setFontSize(10)
-  doc.text("Observaciones", 14, y)
-  doc.setFont("helvetica", "normal")
-  doc.setFontSize(9)
+  y = sectionTitle("Observaciones", y)
 
   const openingNotes = (session as any).openingNotes || ""
   const closingNotes = (session as any).closingNotes || ""
   const notes = [openingNotes, closingNotes].filter(Boolean).join(" | ") || "Sin observaciones"
-  doc.text(notes, 14, y + 5, { maxWidth: 180 })
 
-  y += 14
+  doc.setFillColor(...LIGHT_BG)
+  doc.rect(marginL, y - 2, tableW, 14, "F")
+  doc.setFont("helvetica", "italic")
+  doc.setFontSize(8)
+  doc.setTextColor(80, 80, 80)
+  doc.text(notes, marginL + 3, y + 2, { maxWidth: tableW - 6 })
+  doc.setTextColor(0, 0, 0)
+
+  y = y + 18
 
   if (y > 220) {
     doc.addPage()
     y = 20
   }
 
-  doc.setFont("helvetica", "bold")
-  doc.setFontSize(10)
-  doc.text("Ventas vinculadas", 14, y)
+  y = sectionTitle("Ventas vinculadas", y)
+
   autoTable(doc, {
-    startY: y + 4,
+    startY: y,
     head: [["Factura", "Fecha", "Pago", "Total"]],
     body: session.sales.map((sale) => [
-      sale.invoiceNumber,
+      sale.invoiceNumber.slice(0, 8),
       sale.createdAt,
       sale.paymentMethod,
       formatCurrency(sale.total),
     ]),
     theme: "grid",
-    headStyles: { fontSize: 8, fillColor: [80, 80, 80] },
+    headStyles: { fontSize: 7, fillColor: [...ACCENT], textColor: [255, 255, 255] },
     bodyStyles: { fontSize: 8 },
-    margin: { left: 14 },
-    tableWidth: 180,
+    margin: { left: marginL },
+    tableWidth: tableW,
   })
 
   y = (doc as any).lastAutoTable.finalY + 6
@@ -405,11 +470,10 @@ export async function exportCashSessionPDF(session: CashSessionPDFData, title = 
     y = 20
   }
 
-  doc.setFont("helvetica", "bold")
-  doc.setFontSize(10)
-  doc.text("Movimientos de caja", 14, y)
+  y = sectionTitle("Movimientos de caja", y)
+
   autoTable(doc, {
-    startY: y + 4,
+    startY: y,
     head: [["Fecha", "Categoría", "Detalle", "Medio", "Monto"]],
     body: session.movements.map((movement) => [
       movement.createdAt,
@@ -419,11 +483,19 @@ export async function exportCashSessionPDF(session: CashSessionPDFData, title = 
       `${movement.type === "INCOME" ? "+" : "-"}${formatCurrency(movement.amount)}`,
     ]),
     theme: "grid",
-    headStyles: { fontSize: 8, fillColor: [80, 80, 80] },
+    headStyles: { fontSize: 7, fillColor: [...ACCENT], textColor: [255, 255, 255] },
     bodyStyles: { fontSize: 8 },
-    margin: { left: 14 },
-    tableWidth: 180,
+    margin: { left: marginL },
+    tableWidth: tableW,
   })
+
+  doc.setDrawColor(200, 200, 200)
+  doc.setLineWidth(0.3)
+  doc.line(marginL, 285, marginL + tableW, 285)
+  doc.setFont("helvetica", "normal")
+  doc.setFontSize(6)
+  doc.setTextColor(150, 150, 150)
+  doc.text(`Generado el ${new Date().toLocaleDateString("es-AR")} a las ${new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}`, marginL, 291)
 
   doc.save(`${title.replace(/\s+/g, "-").toLowerCase()}.pdf`)
 }
