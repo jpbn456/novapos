@@ -211,15 +211,14 @@ function CashBillBreakdownSummary({ breakdown, title }: { breakdown: CashBillBre
         <CardTitle>{title}</CardTitle>
         <CardDescription>Conteo guardado por denominación.</CardDescription>
       </CardHeader>
-      <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <CardContent className="space-y-1">
         {CASH_BILL_DENOMINATIONS.map((denomination) => {
           const count = persistedBreakdown[String(denomination) as keyof CashBillBreakdown]
 
           return (
-            <div key={denomination} className="rounded-xl border border-border/70 p-3 text-sm">
-              <p className="text-muted-foreground">{formatCurrency(denomination)}</p>
-              <p className="mt-1 font-semibold text-foreground">{count} billete{count === 1 ? "" : "s"}</p>
-              <p className="mt-1 text-xs text-muted-foreground">Subtotal: {formatCurrency(denomination * count)}</p>
+            <div key={denomination} className="flex items-center justify-between rounded-md border border-border/60 px-3 py-1.5 text-sm">
+              <span className="text-muted-foreground">{formatCurrency(denomination)}</span>
+              <span className="font-medium text-foreground">{count} u. <span className="text-muted-foreground">= {formatCurrency(denomination * count)}</span></span>
             </div>
           )
         })}
