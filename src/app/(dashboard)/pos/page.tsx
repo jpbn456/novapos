@@ -783,11 +783,23 @@ function POSContent() {
                             <div className="min-w-0 space-y-1">
                               <p className="font-medium text-foreground">{item.name}</p>
                               <p className="text-xs text-muted-foreground">{formatCurrency(item.price)} c/{getUnitLabel(item.unitOfMeasure, item.customUnitName)}</p>
-                              {pricing.lines.find((line) => line.productId === item.productId)?.savings ? (
-                                <p className="text-xs text-success-foreground">
-                                  Ahorro: {formatCurrency(pricing.lines.find((line) => line.productId === item.productId)?.savings || 0)}
-                                </p>
-                              ) : null}
+                              {(() => {
+                                const line = pricing.lines.find((l) => l.productId === item.productId)
+                                if (!line?.savings) return null
+                                const scalePromos = line.appliedPromotions.filter((p) => p.type === "SCALE")
+                                return (
+                                  <div>
+                                    <p className="text-xs text-success-foreground">Ahorro: {formatCurrency(line.savings)}</p>
+                                    {scalePromos.length > 0 ? (
+                                      <div className="mt-1 space-y-0.5">
+                                        {scalePromos.map((p, i) => (
+                                          <p key={i} className="text-xs text-success-foreground/80">· {p.promotionName} (-{formatCurrency(p.discount)})</p>
+                                        ))}
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                )
+                              })()}
                             </div>
                             <Button
                               variant="ghost"
@@ -845,11 +857,23 @@ function POSContent() {
                                 <div className="space-y-1">
                                   <p className="font-medium text-foreground">{item.name}</p>
                                   <p className="text-xs text-muted-foreground">{formatCurrency(item.price)} c/{getUnitLabel(item.unitOfMeasure, item.customUnitName)}</p>
-                                  {pricing.lines.find((line) => line.productId === item.productId)?.savings ? (
-                                    <p className="text-xs text-success-foreground">
-                                      Ahorro: {formatCurrency(pricing.lines.find((line) => line.productId === item.productId)?.savings || 0)}
-                                    </p>
-                                  ) : null}
+                                  {(() => {
+                                    const line = pricing.lines.find((l) => l.productId === item.productId)
+                                    if (!line?.savings) return null
+                                    const scalePromos = line.appliedPromotions.filter((p) => p.type === "SCALE")
+                                    return (
+                                      <div>
+                                        <p className="text-xs text-success-foreground">Ahorro: {formatCurrency(line.savings)}</p>
+                                        {scalePromos.length > 0 ? (
+                                          <div className="mt-1 space-y-0.5">
+                                            {scalePromos.map((p, i) => (
+                                              <p key={i} className="text-xs text-success-foreground/80">· {p.promotionName} (-{formatCurrency(p.discount)})</p>
+                                            ))}
+                                          </div>
+                                        ) : null}
+                                      </div>
+                                    )
+                                  })()}
                                 </div>
                               </TableCell>
                               <TableCell>
@@ -931,7 +955,12 @@ function POSContent() {
                     <div className="mt-3 space-y-2 text-sm text-muted-foreground">
                       {pricing.appliedPromotions.map((promotion, index) => (
                         <div key={`${promotion.promotionId}-${index}`} className="flex items-center justify-between gap-3">
-                          <span>{promotion.promotionName}</span>
+                          <span className="flex items-center gap-2">
+                            {promotion.promotionName}
+                            <Badge variant={promotion.type === "SCALE" ? "info" : "secondary"} className="text-[10px]">
+                              {promotion.type === "SCALE" ? "Escalada" : "Combo"}
+                            </Badge>
+                          </span>
                           <span className="text-success-foreground">-{formatCurrency(promotion.discount)}</span>
                         </div>
                       ))}
