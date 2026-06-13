@@ -388,4 +388,52 @@ describe("calculatePromotionalPricing with groups", () => {
       expect.objectContaining({ promotionId: "auto-promo", discount: 15 }),
     ])
   })
+
+  test("SCALE promotion applies best tier discount", () => {
+    const promotions: PromotionPricingInput[] = [
+      {
+        id: "scale-1",
+        name: "10% desde 2un, 20% desde 5un",
+        type: "SCALE",
+        comboPrice: null,
+        discountPercent: null,
+        discountAmount: null,
+        products: [{ productId: "a" }],
+        tiers: [
+          { productId: "a", minimumQuantity: 2, discountPercent: 10, discountAmount: null },
+          { productId: "a", minimumQuantity: 5, discountPercent: 20, discountAmount: null },
+        ],
+      },
+    ]
+
+    const result = calculatePromotionalPricing([{ productId: "a", quantity: 6, unitPrice: 100 }], promotions)
+
+    expect(result.savings).toBe(120) // 20% of 600
+    expect(result.appliedPromotions).toHaveLength(1)
+    expect(result.appliedPromotions[0]).toMatchObject({ promotionId: "scale-1", type: "SCALE", discount: 120 })
+    expect(result.lines[0].appliedPromotions).toHaveLength(1)
+    expect(result.lines[0].savings).toBe(120)
+  })
+
+  test("SCALE promotion only applies when minimum quantity is met", () => {
+    const promotions: PromotionPricingInput[] = [
+      {
+        id: "scale-1",
+        name: "10% desde 2un",
+        type: "SCALE",
+        comboPrice: null,
+        discountPercent: null,
+        discountAmount: null,
+        products: [{ productId: "a" }],
+        tiers: [
+          { productId: "a", minimumQuantity: 2, discountPercent: 10, discountAmount: null },
+        ],
+      },
+    ]
+
+    const result = calculatePromotionalPricing([{ productId: "a", quantity: 1, unitPrice: 100 }], promotions)
+
+    expect(result.savings).toBe(0)
+    expect(result.appliedPromotions).toHaveLength(0)
+  })
 })

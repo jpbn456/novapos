@@ -949,6 +949,24 @@ function POSContent() {
                   </div>
                 </div>
 
+                {promotions.filter((p) => p.type === "SCALE").length > 0 ? (
+                  <div className="rounded-2xl border border-info/30 bg-info/10 p-4">
+                    <p className="text-sm font-medium text-foreground">Escaladas cargadas ({promotions.filter((p) => p.type === "SCALE").length})</p>
+                    <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                      {promotions.filter((p) => p.type === "SCALE").map((p) => (
+                        <div key={p.id} className="flex items-center justify-between gap-2">
+                          <span>{p.name}</span>
+                          <span className="text-xs text-muted-foreground/70">{p.products.length} prod, {p.tiers.length} escalones</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-warning/30 bg-warning/10 p-4">
+                    <p className="text-xs font-medium text-warning-foreground">No hay promociones escaladas activas</p>
+                  </div>
+                )}
+
                 {pricing.appliedPromotions.length > 0 ? (
                   <div className="rounded-2xl border border-success/30 bg-success/10 p-4">
                     <p className="text-sm font-medium text-foreground">Promociones aplicadas</p>
