@@ -742,16 +742,16 @@ function POSContent() {
                       <p className="text-sm text-muted-foreground">Probá con otro nombre, ID o código.</p>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8">
+                    <div className="divide-y divide-border/60 rounded-xl border border-border/60">
                       {filteredProducts.map((product) => (
                         <button
                           key={product.id}
                           type="button"
                           onClick={() => addItem(product)}
-                          className="group flex flex-col rounded-xl border border-border/60 bg-muted/10 p-2.5 text-left transition-colors hover:bg-secondary/22 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition-colors hover:bg-secondary/22 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                         >
-                          <p className="line-clamp-2 text-xs text-muted-foreground leading-tight">{product.name}</p>
-                          <p className="mt-1 text-xs font-bold text-foreground">{formatCurrency(product.price)}</p>
+                          <span className="min-w-0 truncate text-sm text-muted-foreground">{product.name}</span>
+                          <span className="shrink-0 text-sm font-bold text-foreground">{formatCurrency(product.price)}</span>
                         </button>
                       ))}
                     </div>
