@@ -742,17 +742,16 @@ function POSContent() {
                       <p className="text-sm text-muted-foreground">Probá con otro nombre, ID o código.</p>
                     </div>
                   ) : (
-                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                    <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8">
                       {filteredProducts.map((product) => (
                         <button
                           key={product.id}
                           type="button"
                           onClick={() => addItem(product)}
-                          className="group flex min-h-36 flex-col rounded-2xl border border-border/70 bg-muted/10 p-4 text-left transition-colors hover:bg-secondary/22 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          className="group flex flex-col rounded-xl border border-border/60 bg-muted/10 p-2.5 text-left transition-colors hover:bg-secondary/22 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
-                          {product.barcode ? <div className="mb-4 flex flex-wrap items-start justify-between gap-2"><span className="max-w-full truncate text-xs text-muted-foreground">{product.barcode}</span></div> : null}
-                          <p className="line-clamp-2 font-medium text-foreground">{product.name}</p>
-                          <p className="mt-auto pt-4 text-lg font-semibold text-foreground">{formatCurrency(product.price)}</p>
+                          <p className="line-clamp-2 text-xs font-medium text-foreground leading-tight">{product.name}</p>
+                          <p className="mt-1 text-xs font-semibold text-foreground">{formatCurrency(product.price)}</p>
                         </button>
                       ))}
                     </div>
