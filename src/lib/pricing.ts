@@ -454,36 +454,47 @@ export function calculatePromotionalPricing(
 
   const scalePromotions = promotions.filter((promotion) => promotion.type === "SCALE")
   for (const line of baseLines) {
-    const remainingQuantity = line.quantity - (consumedForCombos.get(line.productId) || 0)
-    if (remainingQuantity <= 0) continue
+    const comboCtx = consumedForCombos.get(line.productId) || 0
+    const totalQuantity = line.quantity - comboCtx
+    if (totalQuantity <= 0) continue
 
     const matchingPromotions = scalePromotions.filter((promotion) =>
       promotion.products.some((product) => product.productId === line.productId)
     )
 
-    let bestDiscount = 0
+    let bestTotalDiscount = 0
     let bestPromotion: PromotionPricingInput | null = null
 
     for (const promotion of matchingPromotions) {
-      const applicableTier = [...promotion.tiers]
-        .filter((tier) => (tier.productId ? tier.productId === line.productId : true) && tier.minimumQuantity <= remainingQuantity)
-        .sort((a, b) => b.minimumQuantity - a.minimumQuantity)[0]
+      let remaining = totalQuantity
+      let promoTotal = 0
 
-      if (!applicableTier) continue
+      while (remaining > 0) {
+        const sortedTiers = [...promotion.tiers]
+          .filter((tier) => (tier.productId ? tier.productId === line.productId : true) && tier.minimumQuantity <= remaining)
+          .sort((a, b) => b.minimumQuantity - a.minimumQuantity)
 
-      const remainingSubtotal = line.baseUnitPrice * remainingQuantity
-      const tierDiscount = applicableTier.discountPercent != null
-        ? remainingSubtotal * (applicableTier.discountPercent / 100)
-        : (applicableTier.discountAmount || 0)
+        const tier = sortedTiers[0]
+        if (!tier) break
 
-      if (tierDiscount > bestDiscount) {
-        bestDiscount = tierDiscount
+        const batchQuantity = tier.minimumQuantity
+        const batchSubtotal = line.baseUnitPrice * batchQuantity
+        const batchDiscount = tier.discountPercent != null
+          ? batchSubtotal * (tier.discountPercent / 100)
+          : (tier.discountAmount || 0)
+
+        promoTotal += batchDiscount
+        remaining -= batchQuantity
+      }
+
+      if (promoTotal > bestTotalDiscount) {
+        bestTotalDiscount = promoTotal
         bestPromotion = promotion
       }
     }
 
-    if (bestPromotion && bestDiscount > 0) {
-      const discount = roundCurrency(Math.min(bestDiscount, line.discountedSubtotal))
+    if (bestPromotion && bestTotalDiscount > 0) {
+      const discount = roundCurrency(Math.min(bestTotalDiscount, line.discountedSubtotal))
       line.discountedSubtotal = roundCurrency(line.discountedSubtotal - discount)
       line.savings = roundCurrency(line.savings + discount)
       line.appliedPromotions.push({
