@@ -750,8 +750,8 @@ function POSContent() {
                           onClick={() => addItem(product)}
                           className="group flex flex-col rounded-xl border border-border/60 bg-muted/10 p-2.5 text-left transition-colors hover:bg-secondary/22 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
-                          <p className="line-clamp-2 text-xs font-medium text-foreground leading-tight">{product.name}</p>
-                          <p className="mt-1 text-xs font-semibold text-foreground">{formatCurrency(product.price)}</p>
+                          <p className="line-clamp-2 text-xs text-muted-foreground leading-tight">{product.name}</p>
+                          <p className="mt-1 text-xs font-bold text-foreground">{formatCurrency(product.price)}</p>
                         </button>
                       ))}
                     </div>
