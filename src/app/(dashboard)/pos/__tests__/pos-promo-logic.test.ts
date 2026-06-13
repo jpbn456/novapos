@@ -25,6 +25,8 @@ function makeProduct(overrides: Partial<{ id: string; name: string; price: numbe
     barcode: null,
     unitOfMeasure: "UNIT" as const,
     customUnitName: null,
+    categoryId: null,
+    category: null,
   }
 }
 

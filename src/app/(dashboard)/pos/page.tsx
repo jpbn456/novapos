@@ -19,6 +19,7 @@ import {
 } from "lucide-react"
 
 import { getCashSessions } from "@/app/actions/cash"
+import { getCategories } from "@/app/actions/categories"
 import { getLocations } from "@/app/actions/locations"
 import { getActivePromotions } from "@/app/actions/promotions"
 import { getProducts } from "@/app/actions/products"
@@ -60,6 +61,12 @@ interface Location {
   name: string
 }
 
+interface CategoryInfo {
+  id: string
+  name: string
+  slug: string
+}
+
 export interface Product {
   id: string
   productNumber: number
@@ -69,6 +76,8 @@ export interface Product {
   barcode: string | null
   unitOfMeasure: UnitOfMeasureValue
   customUnitName: string | null
+  categoryId: string | null
+  category: CategoryInfo | null
 }
 
 interface CashSessionOption {
@@ -269,6 +278,8 @@ function POSContent() {
   const [locations, setLocations] = useState<Location[]>([])
   const [cashSessions, setCashSessions] = useState<CashSessionOption[]>([])
   const [products, setProducts] = useState<Product[]>([])
+  const [categories, setCategories] = useState<CategoryInfo[]>([])
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
   const [promotions, setPromotions] = useState<POSPromotion[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
@@ -295,7 +306,7 @@ function POSContent() {
 
   async function loadData() {
     setLoading(true)
-    const [locationsResult, productsResult, promotionsResult] = await Promise.all([getLocations(), getProducts(1, 200), getActivePromotions()])
+    const [locationsResult, productsResult, promotionsResult, categoriesResult] = await Promise.all([getLocations(), getProducts(1, 200), getActivePromotions(), getCategories()])
 
     if (locationsResult.success && locationsResult.data) {
       const activeLocations = (locationsResult.data as any[]).filter((location) => location.isActive)
@@ -313,6 +324,11 @@ function POSContent() {
     }
 
     setPromotions(promotionsResult as POSPromotion[])
+
+    if (categoriesResult.success && categoriesResult.data) {
+      setCategories(categoriesResult.data as CategoryInfo[])
+    }
+
     setLoading(false)
   }
 
@@ -352,11 +368,12 @@ function POSContent() {
     () =>
       products.filter(
         (product) =>
-          product.name.toLowerCase().includes(search.toLowerCase()) ||
+          (!selectedCategoryId || product.categoryId === selectedCategoryId) &&
+          (product.name.toLowerCase().includes(search.toLowerCase()) ||
           String(product.productNumber).includes(search) ||
-          (product.barcode && product.barcode.includes(search))
+          (product.barcode && product.barcode.includes(search)))
       ),
-    [products, search]
+    [products, search, selectedCategoryId]
   )
 
   const currentLocation = locations.find((location) => location.id === locationId)
@@ -648,10 +665,36 @@ function POSContent() {
                 </div>
 
                 {activeView === "PRODUCTS" ? (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <QrCode className="h-4 w-4" />
-                    Podés buscar por texto, ID o pegar el código de barras manualmente.
-                  </div>
+                  <>
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <QrCode className="h-4 w-4" />
+                      Podés buscar por texto, ID o pegar el código de barras manualmente.
+                    </div>
+                    {categories.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          key="all"
+                          variant={!selectedCategoryId ? "default" : "outline"}
+                          size="sm"
+                          className="min-h-8 rounded-full"
+                          onClick={() => setSelectedCategoryId(null)}
+                        >
+                          Todas
+                        </Button>
+                        {categories.map((category) => (
+                          <Button
+                            key={category.id}
+                            variant={selectedCategoryId === category.id ? "default" : "outline"}
+                            size="sm"
+                            className="min-h-8 rounded-full"
+                            onClick={() => setSelectedCategoryId(category.id)}
+                          >
+                            {category.name}
+                          </Button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </>
                 ) : (
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <CheckCircle2 className="h-4 w-4" />
